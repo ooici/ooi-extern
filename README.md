@@ -3,88 +3,37 @@ ooi-extern
 
 ## Using the service
 
+in order for the coverage model to be loaded and used the [pyon.yml name](https://github.com/ooici/ion-definitions/blob/master/res/config/pyon.yml#L14)  needs to be set to ```ion``` other wise the data will not be loaded.
+
 importer service allows the modification (add,remove) of geoserver data layers from ooi coverages
 
 run ```bin/ipython```
 
-enter ```import importerService```
+enter ```import importer_service```
 
-enter ```importerService.resource_importer()```
+enter ```importerService.ResourceImporter()```
 
 the service will tell you which port it is on. you can simply then pass a query to the service eg.
 
+is the service alive
+http://localhost:8844/service=alive&name=ooi&id=ooi
+
+add a layer
 http://localhost:8844/service=addlayer&name="DATASET_ID"&id="DATASET_ID"
+
+reset the datastore
 http://localhost:8844/service=resetstore&name=ooi&id=ooi
 
 ## macosx
 
 install postgres to a virtual env named "postgres"
-pull down this repo and run bootstrap.py and bin/buildout to develope the eggs needed.
+pull down this repo and run ```python bootstrap.py``` and ```bin/buildout``` to develope the eggs needed.
 
-git submodule update --init
+```git submodule update --init```
 
-multicorn
+### Install
 
-virtenv
-
-### 
-
-
-### postgres data store
-
-../geonode/geoserver/data/workspaces/geonode
-
-kinda looks like this
-
-```
-<dataStore>
-  <id>DataStoreInfoImpl-1557c66f:143d5325248:-7ffe</id>
-  <name>asd</name>
-  <description>asd</description>
-  <type>PostGIS</type>
-  <enabled>true</enabled>
-  <workspace>
-    <id>WorkspaceInfoImpl-78ff667e:12476299803:-7ffd</id>
-  </workspace>
-  <connectionParameters>
-    <entry key="port">5432</entry>
-    <entry key="Connection timeout">20</entry>
-    <entry key="dbtype">postgis</entry>
-    <entry key="host">localhost</entry>
-    <entry key="validate connections">true</entry>
-    <entry key="encode functions">false</entry>
-    <entry key="max connections">10</entry>
-    <entry key="database">postgres</entry>
-    <entry key="namespace">http://www.geonode.org/</entry>
-    <entry key="schema">public</entry>
-    <entry key="Loose bbox">true</entry>
-    <entry key="Expose primary keys">false</entry>
-    <entry key="Session startup SQL">select runCovTest();</entry>
-    <entry key="fetch size">1000</entry>
-    <entry key="Max open prepared statements">50</entry>
-    <entry key="preparedStatements">false</entry>
-    <entry key="Estimated extends">true</entry>
-    <entry key="user">rpsdev</entry>
-    <entry key="min connections">1</entry>
-  </connectionParameters>
-  <__default>false</__default>
-</dataStore>
-```
-
-## centos 6.3 install (tested as a VM)
-
-## create virtual env
-
-### install python 2.7.3 from source to venv
-
-### install postgres from source using python 2.7.3 to venv
-
-### install additional postgis libs
-
-### pull down ooi exten git repo
-
-
-## setting up coverage data tables
+for the simple install see below, for a more complex overview please see the following link. NOTE: postgres needs to be buildout against pyon 2.7.X other wise things will not run correctly you can modify your postgres setup to bypass some of the issues i.e in ```supd`` but this requires adding paths to eggs for coverage and everything else etc.
 
 * Create the extension
 ```
@@ -110,7 +59,7 @@ CREATE SERVER cov_srv foreign data wrapper multicorn options (
        lat real,
        lon real,
        "geom" geometry(Point,4326)      
-) server cov_srv options (k '1',cov_path '/path/to/dataset/44afbd5858c44a8494f171d15e76d0ab');
+) server cov_srv options (k '1',cov_path '/path/to/dataset/44afbd5858c44a8494f171d15e76d0ab',cov_id '44afbd5858c44a8494f171d15e76d0ab');
 ```
 
 * you can add this to a postgres function as follows
@@ -126,7 +75,7 @@ CREATE OR REPLACE FUNCTION runCovTest() returns text as $$
        lat real,
        lon real,
        "geom" geometry(Point,4326)        
-) server cov_srv options (k '1',cov_path '/path/to/datasets/44afbd5858c44a8494f171d15e76d0ab');
+) server cov_srv options (k '1',cov_path '/path/to/datasets/44afbd5858c44a8494f171d15e76d0ab',cov_id '44afbd5858c44a8494f171d15e76d0ab');
 
 $$ LANGUAGE SQL ;
 ```
@@ -137,7 +86,11 @@ CREATE or replace VIEW covproj as
 SELECT ST_SetSRID(ST_MakePoint(lon, lat),4326) as proj, dataset_id, time, cond, temp from covtest;
 ```
 
-* notice that the server is called cov_src, and the data table is called cov_test and the projection is called covproj.
+* notice that the server is called ```cov_src```, and the data table is called ```cov_test``` and the view containing the srid information is called ```covproj```. To view the information stored you could simply do:
+``` sql
+SELECT * [time,cond,temp] from covproj [limit #] [where 'field' = 'condition'];
+```
+
 
 
 

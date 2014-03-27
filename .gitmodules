@@ -7,9 +7,9 @@
 [submodule "extern/pyon"]
 	path = extern/pyon
 	url = https://github.com/ooici/pyon.git
-[submodule "extern/Multicorn"]
-	path = extern/Multicorn
+[submodule "extern/multicorn"]
+	path = extern/multicorn
 	url = https://github.com/birdage/Multicorn.git
 [submodule "extern/ion-definitions"]
 	path = extern/ion-definitions
-	url = git@github.com:ooici/ion-definitions.git
+	url = https://github.com/ooici/ion-definitions.git

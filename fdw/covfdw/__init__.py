@@ -10,29 +10,23 @@ import numpy as np
 import numpy
 import string
 import time
+
+from multicorn import ColumnDefinition
+from multicorn import ForeignDataWrapper
+from multicorn import Qual
+from multicorn.compat import unicode_
+from multicorn.utils import log_to_postgres,WARNING,ERROR
+
+from coverage_model import SimplexCoverage, AbstractCoverage,QuantityType, ArrayType, ConstantType, CategoryType
+
 from numpy.random import random
 import numexpr as ne
 
 import simplejson
 from gevent import server
 from gevent.monkey import patch_all; patch_all()
-from pyon.util.breakpoint import breakpoint
-from pyon.util.file_sys import FileSystem, FS
 
 import gevent
-
-from multicorn import ColumnDefinition
-from multicorn import ForeignDataWrapper
-from multicorn import Qual
-from multicorn.compat import unicode_
-from .utils import log_to_postgres
-from logging import WARNING,ERROR
-
-from coverage_model.search.coverage_search import CoverageSearch, CoverageSearchResults, SearchCoverage
-from coverage_model.search.search_parameter import ParamValue, ParamValueRange, SearchCriteria
-from coverage_model.search.search_constants import IndexedParameters
-
-from coverage_model import SimplexCoverage, AbstractCoverage,QuantityType, ArrayType, ConstantType, CategoryType
 
 import random
 from random import randrange

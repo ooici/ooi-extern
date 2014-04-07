@@ -13,7 +13,7 @@ if sys.platform == 'darwin':
     os.environ['C_INCLUDE_PATH'] = '/usr/local/include'
 
 
-setup(  name = 'externalization',
+setup(  name = 'ooi-extern',
     version = '3.0.0',
     description = 'OOI Network Externalization services',
     url = '',

@@ -232,8 +232,7 @@ edit the profile
 vi ~/.bash_profile
 ```
 
-add work on `eoipg`
-`workon eoipg`
+add `workon eoipg`
 
 
 get the submodules and initalize them using the virtual machine python

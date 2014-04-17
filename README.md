@@ -171,6 +171,11 @@ fi
 # User specific environment and startup programs
 
 PATH=/opt/python2.7/bin:$PATH
+PATH=/opt/python2.7/bin:$PATH
+PATH=/home/eoitest/ooi-extern/fdw:$PATH
+
+export PATH
+workon eoipg
 ```
 
 as the postgres user do the same as above

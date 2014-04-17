@@ -175,7 +175,6 @@ PATH=/opt/python2.7/bin:$PATH
 PATH=/home/eoitest/ooi-extern/fdw:$PATH
 
 export PATH
-workon eoipg
 ```
 
 as the postgres user do the same as above
@@ -227,6 +226,15 @@ pip install numpy==1.7.1
 pip install -U setuptools==0.8
 pip install --upgrade setuptools
 ```
+
+edit the profile
+```
+vi ~/.bash_profile
+```
+
+add work on `eoipg`
+`workon eoipg`
+
 
 get the submodules and initalize them using the virtual machine python
 ```

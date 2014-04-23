@@ -9,7 +9,9 @@ import ast
 import yaml
 import logging
 from gevent.pywsgi import WSGIServer
-import requests
+import json
+from bs4 import * 
+
 __author__ = "abird"
 
 class Handler():
@@ -21,18 +23,38 @@ class Handler():
 		server = WSGIServer(('', self.PORT), self.application).serve_forever()
 
 	def application(self,env, start_response):
-	        request = env['PATH_INFO']
-	        print "query:" + env['QUERY_STRING']
-	        request = request[1:]
-	        output = ''
-	        print "request"+request
-	        print "env:"+env
+	        print start_response
 
+	        request = env['PATH_INFO']	     
+	        
 	        if request == '/':
-	            start_response('404 Not Found', [('Content-Type', 'text/html')])
+	            start_response('404 Not Found', [('Content-Type', 'application/xml')])
 	            return ["<h1>Error<b>please add request information</b>"]
-
+	        elif "service=SOS" not in request:     
+	            start_response('404 Not Found', [('Content-Type', 'application/xml')])
+	            return ["<h1>Not an sos service request</b>"]
 	     	else:
-	        	start_response('200 OK', [('Content-Type', 'text/html')])
-        		return ['<b>' + request + '<br>'+ output +'</b>']
+	     		print "query:" + env['QUERY_STRING']		       
+		        request = request[1:]
+		        print "request:"+request
+
+		        output = ''		        
+		        #print "env:"+str(env)
+		        neptune_sos_link = "http://dmas.uvic.ca/sos?"+request		        
+		        r_text = requests.get(neptune_sos_link)
+		        print "---end of request---"
+
+		        #fix the crs code
+		        soup = BeautifulSoup(r_text.text)
+		        offering_list = soup.findAll("sos:observationoffering")
+		        for offering in offering_list:
+		        	envelopes = soup.findAll("gml:envelope")    
+		        	for e in envelopes:
+		        		e['srsName'] = "urn:ogc:def:crs:EPSG:6.5:4326"
+		        
+		      
+		        response_headers = [('Content-Type', 'text/xml; charset=utf-8')]
+		        status = '200 OK'
+	        	start_response(status, response_headers)
+        		return [str(soup)]
 	        

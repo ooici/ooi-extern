@@ -11,11 +11,7 @@ cd to the ooi-extern directory and do a `python bootstrap.py`, once complete do 
 ## Importer Service
 This service handles the communication between the DMS and Geoserver. The importer service allows the modification (add,remove) of geoserver data layers from ooi coverages
 
-run `bin/ipython`
-
-enter `import importer_service`
-
-enter `importer_service.ResourceImporter()`
+run `bin/ipython init.py`
 
 the service will tell you which port it is on. you can simply then pass a query to the service eg.
 

@@ -22,9 +22,7 @@ class Handler():
 	def startup(self):	
 		server = WSGIServer(('', self.PORT), self.application).serve_forever()
 
-	def application(self,env, start_response):
-	        print start_response
-
+	def application(self,env, start_response):	        
 	        request = env['PATH_INFO']	     
 	        
 	        if request == '/':
@@ -55,6 +53,18 @@ class Handler():
 		      
 		        response_headers = [('Content-Type', 'text/xml; charset=utf-8')]
 		        status = '200 OK'
+		        #remove the html codes i
+		        html_start = "<html><body>"
+		        html_end = "</body></html>"
+		        xm_response = str(soup)
+		        if xm_response.startswith(html_start):
+		        	xm_response = xm_response.replace(html_start, "");
+		        if xm_response.endswith(html_end):	
+		        	xm_response = xm_response.replace(html_end,"");
+				
+				#add the xml heeader
+				xm_response = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"+xm_response
+				
 	        	start_response(status, response_headers)
-        		return [str(soup)]
+        		return [xm_response]
 	        

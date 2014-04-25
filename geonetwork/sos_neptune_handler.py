@@ -35,23 +35,23 @@ class Handler():
 	     		print "query:" + env['QUERY_STRING']		       
 		        request = request[1:]
 		        print "request:"+request
-
-		        output = ''		        
+                        request = env['QUERY_STRING']
+     		        output = ''		        
 		        #print "env:"+str(env)
 		        neptune_sos_link = "http://dmas.uvic.ca/sos?"+request		        
 		        r_text = requests.get(neptune_sos_link)
-		        print "---end of request---"
+			print "---end of request---"
 
 		        #fix the crs code
-		        soup = BeautifulSoup(r_text.text)
-		        offering_list = soup.findAll("sos:observationoffering")
-		        for offering in offering_list:
-		        	envelopes = soup.findAll("gml:envelope")    
-		        	for e in envelopes:
-		        		e['srsName'] = "urn:ogc:def:crs:EPSG:6.5:4326"
+		        soup = BeautifulSoup(r_text.text,"xml")
+			for env in soup.findAll("Envelope"):
+				env['srsName'] = "urn:ogc:def:crs:EPSG:6.5:4326" 
 		        
-		      
-		        response_headers = [('Content-Type', 'text/xml; charset=utf-8')]
+			text_file = open("Output.html", "w")
+			text_file.write("%s" % str(soup))
+			text_file.close()
+		        
+			response_headers = [('Content-Type', 'application/xml; charset=utf-8')]
 		        status = '200 OK'
 		        #remove the html codes i
 		        html_start = "<html><body>"
@@ -61,10 +61,11 @@ class Handler():
 		        	xm_response = xm_response.replace(html_start, "");
 		        if xm_response.endswith(html_end):	
 		        	xm_response = xm_response.replace(html_end,"");
-				
-				#add the xml heeader
-				xm_response = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"+xm_response
-				
+		        #xm_response.replace("http://schemas.opengis.net/sos/1.0.0/sosAll.xsd","http://schemas.opengis.net/sos/1.0.0/sosGetCapabilities.xsd")		
+			#add the xml heeader
+			#xm_response = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"+xm_response
+			print "----------------"
+			#print "xmlresp:\n"+xm_response[:]
 	        	start_response(status, response_headers)
         		return [xm_response]
 	        

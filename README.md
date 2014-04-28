@@ -11,11 +11,7 @@ cd to the ooi-extern directory and do a `python bootstrap.py`, once complete do 
 ## Importer Service
 This service handles the communication between the DMS and Geoserver. The importer service allows the modification (add,remove) of geoserver data layers from ooi coverages
 
-run `bin/ipython`
-
-enter `import importer_service`
-
-enter `importer_service.ResourceImporter()`
+run `bin/ipython init.py`
 
 the service will tell you which port it is on. you can simply then pass a query to the service eg.
 
@@ -171,6 +167,10 @@ fi
 # User specific environment and startup programs
 
 PATH=/opt/python2.7/bin:$PATH
+PATH=/opt/python2.7/bin:$PATH
+PATH=/home/eoitest/ooi-extern/fdw:$PATH
+
+export PATH
 ```
 
 as the postgres user do the same as above
@@ -222,6 +222,14 @@ pip install numpy==1.7.1
 pip install -U setuptools==0.8
 pip install --upgrade setuptools
 ```
+
+edit the profile
+```
+vi ~/.bash_profile
+```
+
+add `workon eoipg`
+
 
 get the submodules and initalize them using the virtual machine python
 ```

@@ -16,17 +16,28 @@ from geoserver.support import prepare_upload_bundle, url
 import httplib2
 import json
 import requests
+from BeautifulSoup import *
 import ast
 import yaml
 import logging
 __author__ = "abird"
 
+# GeoServer
 ADDLAYER = "addlayer"
 REMOVELAYER = "removelayer"
 UPDATELAYER = "updatelayer"
 RESETSTORE = "resetstore"
 LISTLAYERS = "listlayers"
 ALIVE = "alive"
+
+# GeoNetwork
+REQUEST_HARVESTER = "requestharvester"
+CREATE_HARVESTER = "createharvester"
+UPDATE_HARVESTER = "updateharvester"
+REMOVE_HARVESTER = "removeharvester"
+START_HARVESTER = "startharvester"
+STOP_HARVESTER = "stopharvester"
+RUN_HARVESTER = "runharvester"
 
 KEY_SERVICE = 'service'
 KEY_NAME = 'name'
@@ -72,12 +83,16 @@ class ResourceImporter():
         self.LAYER_PREFIX = ion_config['eoi']['geoserver']['layer_prefix']
         self.LAYER_SUFFIX = ion_config['eoi']['geoserver']['layer_suffix']
 
+        self.GEONETWORK_BASE_URL = ion_config['eoi']['geonetwork']['base_url']
+        self.GEONETWORK_USER = ion_config['eoi']['geonetwork']['user']
+        self.GEONETWORK_PASS = ion_config['eoi']['geonetwork']['pass']
+
         self.logger.info("parsed attributes")
 
         self.logger.info('Serving on '+str(self.PORT)+'...')
         server = WSGIServer(('', self.PORT), self.application).serve_forever()
 
-    def application(self,env, start_response):
+    def application(self, env, start_response):
         request = env['PATH_INFO']
         request = request[1:]
         cat = Catalog(self.SERVER, self.U_NAME, self.P_WD)
@@ -95,51 +110,99 @@ class ResourceImporter():
                     param_dict[params[0]] = params[1]
 
                 #parse request
-                if (param_dict.has_key(KEY_SERVICE)):
-                    if (param_dict[KEY_SERVICE] == ALIVE):
-                         start_response('200 ok', [('Content-Type', 'text/html')])
-                         return ['<b>ALIVE<BR>' + request + '<br>'+ output +'</b>']
-                    elif (param_dict[KEY_SERVICE] == ADDLAYER):
-                        if (param_dict.has_key(KEY_NAME) and param_dict.has_key(KEY_ID)):
+                if param_dict.has_key(KEY_SERVICE):
+                    if param_dict[KEY_SERVICE] == ALIVE:
+                        start_response('200 ok', [('Content-Type', 'text/html')])
+                        return ['<b>ALIVE<BR>' + request + '<br>' + output + '</b>']
+                    elif param_dict[KEY_SERVICE] == ADDLAYER:
+                        if param_dict.has_key(KEY_NAME) and param_dict.has_key(KEY_ID):
                             if param_dict.has_key(PARAMS):
-                                self.create_layer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS,param_dict[PARAMS])
+                                self.create_layer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS, param_dict[PARAMS])
                             else:
                                 start_response('400 Bad Request', [('Content-Type', 'text/html')])
-                                return ['<b>ERROR NO PARAMS<BR>' + request + '<br>'+ output +'</b>']    
+                                return ['<b>ERROR NO PARAMS<BR>' + request + '<br>' + output + '</b>']
                         else:
                             start_response('400 Bad Request', [('Content-Type', 'text/html')])
-                            return ['<b>ERROR NO ID or NAME<BR>' + request + '<br>'+ output +'</b>']    
+                            return ['<b>ERROR NO ID or NAME<BR>' + request + '<br>' + output + '</b>']
 
-                    elif (param_dict[KEY_SERVICE] == REMOVELAYER):
-                        if (param_dict.has_key(KEY_NAME) and param_dict.has_key(KEY_ID)):
-                            self.remove_layer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS,cat)
+                    elif param_dict[KEY_SERVICE] == REMOVELAYER:
+                        if param_dict.has_key(KEY_NAME) and param_dict.has_key(KEY_ID):
+                            self.remove_layer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS, cat)
 
-                    elif (param_dict[KEY_SERVICE] == UPDATELAYER):
-                        self.remove_layer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS,cat)
-                        self.createLayer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS,param_dict[PARAMS])
+                    elif param_dict[KEY_SERVICE] == UPDATELAYER:
+                        self.remove_layer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS, cat)
+                        self.createLayer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS, param_dict[PARAMS])
                         self.logger.info(UPDATELAYER)
 
-                    elif (param_dict[KEY_SERVICE] == LISTLAYERS):
+                    elif param_dict[KEY_SERVICE] == LISTLAYERS:
                         layer_list_ret = self.get_layer_list(cat)
                         self.logger.info(UPDATELAYER)
                         self.logger.info(layer_list_ret)
                         output = ''.join(layer_list_ret)
                         self.logger.info(output)
 
-                    elif (param_dict[KEY_SERVICE] == RESETSTORE):
-                       self.reset_data_store(cat)
+                    elif param_dict[KEY_SERVICE] == RESETSTORE:
+                        self.reset_data_store(cat)
+
+                    # GeoNetwork Service Calls
+                    #
+                    # Obtain list of current harvesters, i.e. is the service ALIVE?
+                    elif param_dict[KEY_SERVICE] == REQUEST_HARVESTER:
+                        r = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get', auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+                        if r.status_code == 200:
+                            output = str(r.text)
+                            start_response('200 ok', [('Content-Type', 'text/html')])
+
+                            nodes = self.get_geonetwork_nodes(r.text)
+                            if len(nodes) >= 1:
+                                return ['<b>ALIVE<BR>' + request + '<br>' + output + '</b>']
+                            else:
+                                return ['<b>ALIVE - NO HARVESTER NODES DEFINED<BR>' + request + '<br>' + output + '</b>']
+                        else:
+                            start_response(str(r.status_code), [('Content-Type', 'text/html')])
+                            return ['<b>ERROR</b>']
+
+                    # Create new harvester
+                    elif param_dict[KEY_SERVICE] == CREATE_HARVESTER:
+                        # TODO: Check that harvester doesn't already exist (use name field from RR and GN harvester name)
+                        # If it does, make sure to update with new params
+                        pass
+
+                    # Update existing harvester
+                    elif param_dict[KEY_SERVICE] == UPDATE_HARVESTER:
+                        pass
+
+                    # Remove existing harvester
+                    elif param_dict[KEY_SERVICE] == REMOVE_HARVESTER:
+                        pass
+
+                    # Start automated harvester based on defined scheduled time
+                    elif param_dict[KEY_SERVICE] == START_HARVESTER:
+                        pass
+
+                    # Stop harvester
+                    elif param_dict[KEY_SERVICE] == STOP_HARVESTER:
+                        pass
+
+                    # Run harvester on-demand)
+                    elif param_dict[KEY_SERVICE] == RUN_HARVESTER:
+                        pass
 
         start_response('200 OK', [('Content-Type', 'text/html')])
-        return ['<b>' + request + '<br>'+ output +'</b>']
+        return ['<b>' + request + '<br>' + output + '</b>']
 
+    def get_geonetwork_nodes(self, response_xml):
+        soup = BeautifulSoup(response_xml)
+        nodes = soup.findAll("node")
+        return nodes
 
     def get_geo_store_params(self,):
         #rpsdev = 'Session startup SQL': 'select runCovTest();\nselect 1 from covtest limit 1;',
-        session_startup =""
-        if (self.SESSION_START_UP_ln1 is not None):
+        session_startup = ""
+        if self.SESSION_START_UP_ln1 is not None:
             session_startup+=self.SESSION_START_UP_ln1 + '\n'
-        if (self.SESSION_START_UP_ln2 is not None):
-            session_startup+=self.SESSION_START_UP_ln2
+        if self.SESSION_START_UP_ln2 is not None:
+            session_startup += self.SESSION_START_UP_ln2
             
         params = {
             'Connection timeout': '20',
@@ -164,7 +227,7 @@ class ResourceImporter():
         }
         return params
 
-    def get_layer_list(self,cat):
+    def get_layer_list(self, cat):
         layer_list = []
         layer_list.append('List Of DataLayers')
         layer_list.append('<br>')
@@ -175,13 +238,12 @@ class ResourceImporter():
             for d in geo_store.get_resources():
                 layer_list.append(d.name)
                 layer_list.append('<br>')
-        except Exception,e:
-            self.logger.info("issue getting layers:"+str(e))
+        except Exception, e:
+            self.logger.info("issue getting layers:" + str(e))
 
         return layer_list    
 
-
-    def reset_data_store(self,cat):
+    def reset_data_store(self, cat):
         self.logger.info(RESETSTORE)
         geo_ws = cat.get_workspace(self.GEO_WS)
         try:
@@ -189,7 +251,7 @@ class ResourceImporter():
             #remove all the things if it has resources
             for d in geo_store.get_resources():
                 layer = cat.get_layer(d.name)
-                if (layer):
+                if layer:
                     #delete the layer
                     cat.delete(layer)
                     #delete the actual file
@@ -209,12 +271,12 @@ class ResourceImporter():
             self.logger.info("issue getting/removing datastore:"+str(e))
 
         try:
-            if (cat.get_store(self.GEO_STORE)):
+            if cat.get_store(self.GEO_STORE):
                 #store exists for some reason was not removed!?
                 self.logger.info("using existing datastore")
         except Exception, e:
             self.logger.info("create new")
-            #store does not exist create it, the prefered outcome 
+            #store does not exist create it, the preferred outcome
             geo_store = cat.create_datastore(self.GEO_STORE, geo_ws)
             geo_store.capabilitiesURL = "http://www.geonode.org/"
             geo_store.type = "PostGIS"
@@ -348,7 +410,7 @@ class ResourceImporter():
 
         #get the existing layer
         self.logger.info("statusCode: getLayer:"+str(r.status_code))
-        if (r.status_code==200):
+        if r.status_code == 200:
             xml = r.text
             findString = ('</resource>')
             val= xml.find(findString)
@@ -366,7 +428,7 @@ class ResourceImporter():
             self.logger.info("could not get layer, check it exists... "+r.text)    
         pass
 
-    def add_attributes(self,param,param_type):
+    def add_attributes(self, param, param_type):
 
         attribute = "<attribute>"
         attribute += "<name>"+param+"</name>"

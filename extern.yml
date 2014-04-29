@@ -35,4 +35,9 @@ eoi:
 #coverageFDWSever        
     fdw:
         server: cov_srv
-        create_fdw: 
+        create_fdw:
+#geonetwork connection settings
+    geonetwork:
+        base_url: http://eoi-dev1.oceanobservatories.org:8080/geonetwork/srv/en/
+        user: admin
+        pass: admin

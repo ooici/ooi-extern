@@ -35,6 +35,7 @@ REQUEST_HARVESTER = "requestharvester"
 CREATE_HARVESTER = "createharvester"
 UPDATE_HARVESTER = "updateharvester"
 REMOVE_HARVESTER = "removeharvester"
+RESET_HARVESTER = "resetharvester"
 START_HARVESTER = "startharvester"
 STOP_HARVESTER = "stopharvester"
 RUN_HARVESTER = "runharvester"
@@ -166,7 +167,43 @@ class ResourceImporter():
                     elif param_dict[KEY_SERVICE] == CREATE_HARVESTER:
                         # TODO: Check that harvester doesn't already exist (use name field from RR and GN harvester name)
                         # If it does, make sure to update with new params
-                        pass
+
+                        # Make sure the service is ALIVE
+                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
+                                               auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                        # Check that the type is set
+                        harvester_type = None
+                        if 'type' in param_dict:
+                            harvester_type = param_dict['type']
+
+                        # Check that the name is set
+                        harvester_name = None
+                        if 'name' in param_dict:
+                            harvester_name = param_dict['name']
+
+                        if r_check.status_code == 200 and harvester_type is not None and harvester_name is not None:
+                            # Set the proper XML payload based on the type and configuration of the harvester
+                            payload = self.configure_xml_harvester_add_xml(harvester_type=harvester_type, harvester_name=harvester_name)
+                            headers = {'Content-Type': 'application/xml'}
+                            r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.add',
+                                              data=payload,
+                                              headers=headers,
+                                              auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                            if r.status_code == 200:
+                                #output = str(r.text)
+                                start_response('200 ok', [('Content-Type', 'text/html')])
+                                #return ['<b>ALIVE & ADDED<BR>' + request + '<br>' + output + '</b>']
+                                return ['<b>ALIVE & ADDED<br>' + request + '</b>']
+
+                        else:
+                            start_response(str(r_check.status_code), [('Content-Type', 'text/html')])
+                            response_str = '<b>ERROR Creating Harvester</b>'
+                            response_str += harvester_name
+                            response_str += harvester_type
+                            response_str += r_check.status_code
+                            return [response_str]
 
                     # Update existing harvester
                     elif param_dict[KEY_SERVICE] == UPDATE_HARVESTER:
@@ -174,6 +211,10 @@ class ResourceImporter():
 
                     # Remove existing harvester
                     elif param_dict[KEY_SERVICE] == REMOVE_HARVESTER:
+                        pass
+
+                    # Remove ALL harvesters associated with external observatories
+                    elif param_dict[KEY_SERVICE] == RESET_HARVESTER:
                         pass
 
                     # Start automated harvester based on defined scheduled time
@@ -307,7 +348,7 @@ class ResourceImporter():
         except Exception:
             self.logger.info("issue getting/removing data layer/resource")
 
-    def create_layer(self,layer_name, store_name, workspace_name,params):
+    def create_layer(self, layer_name, store_name, workspace_name, params):
         self.logger.info(ADDLAYER)
         xml = '''<?xml version='1.0' encoding='utf-8'?>
             <featureType>
@@ -371,7 +412,7 @@ class ResourceImporter():
     		  </store>
     		  <maxFeatures>0</maxFeatures>
     		  <numDecimals>0</numDecimals>
-    		  '''% (self.LAYER_PREFIX,layer_name, self.LAYER_SUFFIX ,layer_name,workspace_name, layer_name , layer_name, store_name)
+    		  '''% (self.LAYER_PREFIX, layer_name, self.LAYER_SUFFIX ,layer_name, workspace_name, layer_name, layer_name, store_name)
               
         xml += "<attributes>"
 
@@ -452,4 +493,63 @@ class ResourceImporter():
         attribute += "</attribute>"
 
         return attribute
+
+    def configure_xml_harvester_add_xml(self, harvester_type, harvester_name):
+        harvester_types = [
+            'geonetwork',
+            'webdav',
+            'csw',
+            'z3950',
+            'oaipmh',
+            'thredds',
+            'wfsfeatures',
+            'filesystem',
+            'arcsde',
+            'ogcwxs',
+            'geoPREST'
+        ]
+        if (harvester_type in harvester_types) and len(harvester_name) > 0 and type(harvester_name) == str:
+            # GeoPortal (geoPREST) Harvester XML
+            # TODO: This is the only one supported at the moment
+            if harvester_type == 'geoPREST':
+                xml = '''<?xml version='1.0' encoding='utf-8'?>
+                <node type=\"%s\">
+                         <site>
+                           <name>%s</name>
+                           <baseUrl>http://www.ngdc.noaa.gov/geoportal</baseUrl>
+                           <icon>OOI_LogoBlack.png</icon>
+                         </site>
+                         <content>
+                           <validate>false</validate>
+                           <importxslt>gmiTogmd.xsl</importxslt>
+                         </content>
+                         <options>
+                           <every>0 0 0 ? * *</every>
+                           <oneRunOnly>true</oneRunOnly>
+                           <status>inactive</status>
+                         </options>
+                         <searches>
+                           <search>
+                             <freeText>multibeam~</freeText>
+                           </search>
+                           <search>
+                             <freeText>RI</freeText>
+                           </search>
+                         </searches>
+                         <privileges>
+                           <group id=\"1\">
+                             <operation name=\"view\" />
+                             <operation name=\"dynamic\" />
+                             <operation name=\"featured\" />
+                           </group>
+                         </privileges>
+                         <categories>
+                           <category id="2" />
+                         </categories>
+                        </node>''' % (harvester_type, harvester_name)
+
+            return xml
+        else:
+            self.logger.error('Could not create harvester XML definition based on supplied input!')
+            return 'Error'
 

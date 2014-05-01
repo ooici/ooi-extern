@@ -166,7 +166,7 @@ class ResourceImporter():
                     # Create new harvester
                     elif param_dict[KEY_SERVICE] == CREATE_HARVESTER:
                         # TODO: Check that harvester doesn't already exist (use name field from RR and GN harvester name)
-                        # If it does, make sure to update with new params
+                        # TODO: If it does, make sure to update with new params by DROP/ADD method
 
                         # Make sure the service is ALIVE
                         r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
@@ -185,18 +185,23 @@ class ResourceImporter():
                         if r_check.status_code == 200 and harvester_type is not None and harvester_name is not None:
                             # Set the proper XML payload based on the type and configuration of the harvester
                             payload = self.configure_xml_harvester_add_xml(harvester_type=harvester_type, harvester_name=harvester_name)
-                            headers = {'Content-Type': 'application/xml'}
-                            r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.add',
-                                              data=payload,
-                                              headers=headers,
-                                              auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
 
-                            if r.status_code == 200:
-                                #output = str(r.text)
-                                start_response('200 ok', [('Content-Type', 'text/html')])
-                                #return ['<b>ALIVE & ADDED<BR>' + request + '<br>' + output + '</b>']
-                                return ['<b>ALIVE & ADDED<br>' + request + '</b>']
+                            # Check to ensure the XML payload returned properly
+                            if payload is not False:
+                                headers = {'Content-Type': 'application/xml'}
+                                r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.add',
+                                                  data=payload,
+                                                  headers=headers,
+                                                  auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
 
+                                if r.status_code == 200:
+                                    #output = str(r.text)
+                                    start_response('200 ok', [('Content-Type', 'text/html')])
+                                    #return ['<b>ALIVE & ADDED<BR>' + request + '<br>' + output + '</b>']
+                                    return ['<b>ALIVE & ADDED<br>' + request + '</b>']
+                            else:
+                                # XML payload configuration failed
+                                self.logger.error("XML payload configuration failed")
                         else:
                             start_response(str(r_check.status_code), [('Content-Type', 'text/html')])
                             response_str = '<b>ERROR Creating Harvester</b>'
@@ -207,6 +212,7 @@ class ResourceImporter():
 
                     # Update existing harvester
                     elif param_dict[KEY_SERVICE] == UPDATE_HARVESTER:
+                        # TODO: This should be a DROP/ADD
                         pass
 
                     # Remove existing harvester
@@ -215,22 +221,123 @@ class ResourceImporter():
 
                     # Remove ALL harvesters associated with external observatories
                     elif param_dict[KEY_SERVICE] == RESET_HARVESTER:
-                        pass
+                        # param_dict can handle a 'mode' of:
+                        # all = All harvesters in GeoNetwork
+                        # ooi = Only OOI harvesters are selected
+                        # and 'action' of:
+                        # remove = Remove the chosen harvester(s)
+                        # list = Show the harvester that would be removed but take no action
+
+                        # Possible Scenarios
+                        # &mode=all&action=remove
+                        # &mode=all&action=list
+                        # &mode=ooi&action=remove
+                        # &mode=ooi&action=list
+
+                        # Check that the mode is set
+                        mode = None
+                        if 'mode' in param_dict:
+                            mode = param_dict['mode']
+
+                        # Check that the action is set
+                        action = None
+                        if 'action' in param_dict:
+                            action = param_dict['action']
+
+                        harvesters, r = self.get_harvesters()
+
+                        start_response(str(r.status_code), [('Content-Type', 'text/html')])
+
+                        response_str = ''
+                        if mode is not None and action is not None:
+                            if mode == 'all' and action == 'list':
+                                # List all node info
+                                for harvester in harvesters:
+                                    for h in harvesters[harvester]:
+                                        response_str += h + ' = ' + harvesters[harvester][h] + '</br>'
+                                        print h + ' = ' + harvesters[harvester][h] + '</br>'
+                                return [response_str]
+                            elif mode == 'all' and action == 'remove':
+                                # Remove all nodes
+                                response_str = '<b>Not yet implemented, sorry. </b>'
+                                return [response_str]
+                            elif mode == 'ooi' and action == 'list':
+                                # List all OOI nodes
+                                # TODO: Need list of OOI node names to compare against like ooi_names
+                                ooi_names = ['Neptune SOS']
+                                for harvester in harvesters:
+                                    for h in harvesters[harvester]:
+                                        if harvesters[harvester]['name'] in ooi_names:
+                                            response_str += h + ' = ' + harvesters[harvester][h] + '</br>'
+                                            print h + ' = ' + harvesters[harvester][h] + '</br>'
+                                return [response_str]
+                            elif mode == 'ooi' and action == 'remove':
+                                # Remove only the OOI nodes
+                                response_str = '<b>Not yet implemented, sorry. </b>'
+                                return [response_str]
+                            else:
+                                response_str = 'Could not determine action to perform based on mode/action parameter inputs!</br>'
+                                response_str += '<b></br>Possible Scenarios</br></b>'
+                                response_str += '&mode=all&action=remove</br>'
+                                response_str += '&mode=all&action=list</br>'
+                                response_str += '&mode=ooi&action=remove</br>'
+                                response_str += '&mode=ooi&action=list</br>'
+                                self.logger.warn(response_str)
+                                return[response_str]
+                        else:
+                            response_str = 'Could not determine action to perform based on mode/action parameter inputs!</br>'
+                            response_str += '<b></br>Possible Scenarios</br></b>'
+                            response_str += '&mode=all&action=remove</br>'
+                            response_str += '&mode=all&action=list</br>'
+                            response_str += '&mode=ooi&action=remove</br>'
+                            response_str += '&mode=ooi&action=list</br>'
+                            self.logger.warn(response_str)
+                            return[response_str]
+
 
                     # Start automated harvester based on defined scheduled time
                     elif param_dict[KEY_SERVICE] == START_HARVESTER:
-                        pass
+                        start_response('200 ok', [('Content-Type', 'text/html')])
+                        response_str = '<b>Not yet implemented, sorry. </b>'
+                        return [response_str]
 
                     # Stop harvester
                     elif param_dict[KEY_SERVICE] == STOP_HARVESTER:
-                        pass
+                        start_response('200 ok', [('Content-Type', 'text/html')])
+                        response_str = '<b>Not yet implemented, sorry. </b>'
+                        return [response_str]
 
                     # Run harvester on-demand)
                     elif param_dict[KEY_SERVICE] == RUN_HARVESTER:
-                        pass
+                        start_response('200 ok', [('Content-Type', 'text/html')])
+                        response_str = '<b>Not yet implemented, sorry. </b>'
+                        return [response_str]
 
         start_response('200 OK', [('Content-Type', 'text/html')])
         return ['<b>' + request + '<br>' + output + '</b>']
+
+    def get_harvesters(self):
+        harvesters = {}
+        try:
+            r = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get', auth=('admin', 'admin'))
+            soup = BeautifulSoup(r.text)
+            nodes = soup.findAll('node')
+            for node in nodes:
+                hid = str(node['id'])
+                htype = str(node['type'])
+                site = node.find('site')
+                name = str(site.find('name').text)
+                uuid = str(site.find('uuid').text)
+                harvesters[hid] = {'type': htype, 'name': name, 'uuid': uuid}
+
+            # sites = soup.findAll('site')
+            # for site in sites:
+            #     name = site.find('name')
+            #     uuid = site.find('uuid')
+            #     print name.text, uuid.text
+            return harvesters, r
+        except Exception:
+            self.logger.error('Could not retrieve harvester node list!')
 
     def get_geonetwork_nodes(self, response_xml):
         soup = BeautifulSoup(response_xml)
@@ -512,8 +619,9 @@ class ResourceImporter():
             # GeoPortal (geoPREST) Harvester XML
             # TODO: This is the only one supported at the moment
             if harvester_type == 'geoPREST':
+                # TODO: The harvester name should probably be the RR id
                 xml = '''<?xml version='1.0' encoding='utf-8'?>
-                <node type=\"%s\">
+                <node id=type=\"%s\">
                          <site>
                            <name>%s</name>
                            <baseUrl>http://www.ngdc.noaa.gov/geoportal</baseUrl>
@@ -551,5 +659,5 @@ class ResourceImporter():
             return xml
         else:
             self.logger.error('Could not create harvester XML definition based on supplied input!')
-            return 'Error'
+            return False
 

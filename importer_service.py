@@ -86,8 +86,9 @@ class ResourceImporter():
         self.LAYER_SUFFIX = ion_config['eoi']['geoserver']['layer_suffix']
 
         self.GEONETWORK_BASE_URL = ion_config['eoi']['geonetwork']['base_url']
-        self.GEONETWORK_USER = ion_config['eoi']['geonetwork']['user']
-        self.GEONETWORK_PASS = ion_config['eoi']['geonetwork']['pass']
+        self.GEONETWORK_USER = ion_config['eoi']['geonetwork']['user_name']
+        self.GEONETWORK_PASS = ion_config['eoi']['geonetwork']['password']
+        self.GEONETWORK_ICON = ion_config['eoi']['geonetwork']['icon']
 
         self.logger.info("parsed attributes")
 
@@ -187,7 +188,7 @@ class ResourceImporter():
                             'searchterms': None,                # searchterms=&
                             'importxslt': None,                 # importxslt=&
                             'ogctype': None,                    # ogctype=SOS1.0.0&
-                            'connectionparameters': None,       # connectionparams={}&
+                            'connectionparams': None,           # connectionparams={}&
                             'datasourceattributes': None,       # datasourceattributes={}&
                             'protocoltype': None,               # institution={'website': '', 'phone': '', 'name': '', 'email': ''}&
                             'institution': None                 # protocoltype=&
@@ -209,9 +210,10 @@ class ResourceImporter():
                             else:
                                 self.logger.warn('Parameter %s is missing.' % required_parameter)
 
-                        if r_check.status_code == 200 and None not in required_parameters.values():
-                            # Set the proper XML payload based on the type and configuration of the harvester
-                            payload = self.configure_xml_harvester_add_xml(required_parameters)
+                        # if r_check.status_code == 200 and None not in required_parameters.values():
+                        if r_check.status_code == 200:
+                            #Set the proper XML payload based on the type and configuration of the harvester
+                            payload = self.configure_xml_harvester_add_xml(required_parameters, self.GEONETWORK_ICON)
 
                             # Check to ensure the XML payload returned properly
                             if payload is not False:
@@ -222,10 +224,10 @@ class ResourceImporter():
                                                   auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
 
                                 if r.status_code == 200:
-                                    #output = str(r.text)
+                                    output = str(r.text)
                                     start_response('200 ok', [('Content-Type', 'text/html')])
                                     #return ['<b>ALIVE & ADDED<BR>' + request + '<br>' + output + '</b>']
-                                    return ['<b>ALIVE & ADDED<br>' + request + '</b>']
+                                    return ['<b>ALIVE & ADDED<br>' + request + '</b></br>' + output]
                             else:
                                 # XML payload configuration failed
                                 self.logger.error("XML payload configuration failed")
@@ -346,23 +348,18 @@ class ResourceImporter():
         harvesters = {}
         try:
             r = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get', auth=('admin', 'admin'))
-            soup = BeautifulSoup(r.text)
-            nodes = soup.findAll('node')
-            for node in nodes:
-                hid = str(node['id'])
-                htype = str(node['type'])
-                site = node.find('site')
-                name = str(site.find('name').text)
-                uuid = str(site.find('uuid').text)
-                harvesters[hid] = {'type': htype, 'name': name, 'uuid': uuid}
-
-            # sites = soup.findAll('site')
-            # for site in sites:
-            #     name = site.find('name')
-            #     uuid = site.find('uuid')
-            #     print name.text, uuid.text
+            if r.status_code == 200:
+                soup = BeautifulSoup(r.text)
+                nodes = soup.findAll('node')
+                for node in nodes:
+                    hid = str(node['id'])
+                    htype = str(node['type'])
+                    site = node.find('site')
+                    name = str(site.find('name').text)
+                    uuid = str(site.find('uuid').text)
+                    harvesters[hid] = {'type': htype, 'name': name, 'uuid': uuid}
             return harvesters, r
-        except Exception:
+        except IOError:
             self.logger.error('Could not retrieve harvester node list!')
 
     def get_geonetwork_nodes(self, response_xml):
@@ -627,7 +624,7 @@ class ResourceImporter():
 
         return attribute
 
-    def configure_xml_harvester_add_xml(self, required_parameters, base_url, icon):
+    def configure_xml_harvester_add_xml(self, required_parameters, icon):
         # Validate required_parameters values
         valid_parameters = True
 
@@ -651,27 +648,24 @@ class ResourceImporter():
         if required_parameters['harvestertype'] not in harvester_types:
             valid_parameters = False
 
-
         # Search term management
-        xmlTemplate = """
-        <search>
+        xmlTemplate = """<search>
             <freeText>%s</freeText>
-        <search>
-        """
-
+        </search>"""
+        search_terms = required_parameters['searchterms'].split(',')
         searches = ''
         if len(required_parameters['searchterms']) > 0:
-            for search_term in list(required_parameters['searchterms']):
+            for search_term in search_terms:
                 searches += xmlTemplate % search_term
                 searches += '\n'
         else:
             searches = xmlTemplate % ''
 
         # Gather all parameters for XML file
-        other_parameters = dict
+        other_parameters = {}
         other_parameters['searches'] = searches
-        other_parameters['base_url'] = base_url
         other_parameters['icon'] = icon
+        other_parameters['baseurl'] = required_parameters['protocoltype']
 
         xmldata = required_parameters.copy()
         xmldata.update(other_parameters)
@@ -681,35 +675,47 @@ class ResourceImporter():
             # TODO: This is the only one supported at the moment
             if required_parameters['harvestertype'] == 'geoPREST':
                 xml = '''<?xml version='1.0' encoding='utf-8'?>
-                <node id=type=\"%s\">
-                         <site>
-                           <name>%(name)s</name>
-                           <baseUrl>%(base_url)s</baseUrl>
-                           <icon>%(icon)s</icon>
-                         </site>
-                         <content>
-                           <validate>false</validate>
-                           <importxslt>%(importxslt)s</importxslt>
-                         </content>
-                         <options>
-                           <every>0 0 0 ? * *</every>
-                           <oneRunOnly>true</oneRunOnly>
-                           <status>inactive</status>
-                         </options>
-                         <searches>
-                           %(searches)s
-                         </searches>
-                         <privileges>
-                           <group id=\"1\">
-                             <operation name=\"view\" />
-                             <operation name=\"dynamic\" />
-                             <operation name=\"featured\" />
-                           </group>
-                         </privileges>
-                         <categories>
-                           <category id="2" />
-                         </categories>
-                        </node>''' % xmldata
+                <node type=\"%(harvestertype)s\">
+                    <owner>
+                        <id>1</id>
+                    </owner>
+                    <ownerGroup>
+                        <id>3</id>
+                    </ownerGroup>
+                    <site>
+                        <name>%(name)s</name>
+                        <account>
+                            <use>true</use>
+                            <username/>
+                            <password/>
+                        </account>
+                        <baseUrl>%(baseurl)s</baseUrl>
+                        <icon>%(icon)s</icon>
+                    </site>
+                    <content>
+                        <validate>false</validate>
+                        <importxslt>%(importxslt)s</importxslt>
+                    </content>
+                    <options>
+                        <every>0 0 0 ? * *</every>
+                        <oneRunOnly>true</oneRunOnly>
+                        <status>inactive</status>
+                    </options>
+                    <searches>
+                        %(searches)s
+                    </searches>
+                    <privileges>
+                        <group id=\"3\">
+                            <operation name=\"view\" />
+                            <operation name=\"dynamic\" />
+                            <operation name=\"featured\" />
+                        </group>
+                    </privileges>
+                    <categories>
+                        <category id="2" />
+                    </categories>
+                </node>''' % xmldata
+                print xml
                 return xml
             elif required_parameters['harvestertype'] == 'ogcwxs':
                 xml = ''

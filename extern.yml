@@ -39,5 +39,6 @@ eoi:
 #geonetwork connection settings
     geonetwork:
         base_url: http://eoi-dev1.oceanobservatories.org:8080/geonetwork/srv/eng/
-        user: admin
-        pass: admin
+        icon: ooi.png
+        user_name: admin
+        password: admin

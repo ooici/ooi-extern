@@ -20,6 +20,7 @@ from BeautifulSoup import *
 import ast
 import yaml
 import logging
+
 __author__ = "abird"
 
 # GeoServer
@@ -172,19 +173,45 @@ class ResourceImporter():
                         r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
                                                auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
 
-                        # Check that the type is set
-                        harvester_type = None
-                        if 'type' in param_dict:
-                            harvester_type = param_dict['type']
+                        required_parameters = {
+                            'id': None,                         # id=6a9e7082c36b4facb915e36488376328
+                            #'ownerid': None,
+                            'lcstate': None,                    # lcstate=DEPLOYED&
+                            #'org_ids': None,
+                            #'providerids': None,
+                            'externalize': None,                # externalize=0&
+                            'name': None,                       # name=ooi&
+                            'description': None,                # description=OOI&
+                            'datasourcetype': None,             # datasourcetype=sos&
+                            'harvestertype': None,              # harvestertype=ogcwxs&
+                            'searchterms': None,                # searchterms=&
+                            'importxslt': None,                 # importxslt=&
+                            'ogctype': None,                    # ogctype=SOS1.0.0&
+                            'connectionparameters': None,       # connectionparams={}&
+                            'datasourceattributes': None,       # datasourceattributes={}&
+                            'protocoltype': None,               # institution={'website': '', 'phone': '', 'name': '', 'email': ''}&
+                            'institution': None                 # protocoltype=&
+                            #'contact': None
+                        }
 
-                        # Check that the name is set
-                        harvester_name = None
-                        if 'name' in param_dict:
-                            harvester_name = param_dict['name']
+                                                                # rev=1&
+                                                                # availability=AVAILABLE&
+                                                                # persistedversion=1&
+                                                                # addl={}&
+                                                                # visibility=1&
+                                                                # tsupdated=1399467966285&
+                                                                # tscreated=1399467966285&
+                                                                # altids=['PRE:EDSID3']&
 
-                        if r_check.status_code == 200 and harvester_type is not None and harvester_name is not None:
+                        for required_parameter in required_parameters:
+                            if required_parameter in param_dict:
+                                required_parameters[required_parameter] = param_dict[required_parameter]
+                            else:
+                                self.logger.warn('Parameter %s is missing.' % required_parameter)
+
+                        if r_check.status_code == 200 and None not in required_parameters.values():
                             # Set the proper XML payload based on the type and configuration of the harvester
-                            payload = self.configure_xml_harvester_add_xml(harvester_type=harvester_type, harvester_name=harvester_name)
+                            payload = self.configure_xml_harvester_add_xml(required_parameters)
 
                             # Check to ensure the XML payload returned properly
                             if payload is not False:
@@ -204,10 +231,9 @@ class ResourceImporter():
                                 self.logger.error("XML payload configuration failed")
                         else:
                             start_response(str(r_check.status_code), [('Content-Type', 'text/html')])
-                            response_str = '<b>ERROR Creating Harvester</b>'
-                            response_str += harvester_name
-                            response_str += harvester_type
-                            response_str += r_check.status_code
+                            response_str = '<b>ERROR: %s Creating Harvester</b></br>' % r_check.status_code
+                            for p in required_parameters:
+                                response_str += '%s </br>' % p
                             return [response_str]
 
                     # Update existing harvester
@@ -601,7 +627,10 @@ class ResourceImporter():
 
         return attribute
 
-    def configure_xml_harvester_add_xml(self, harvester_type, harvester_name):
+    def configure_xml_harvester_add_xml(self, required_parameters, base_url, icon):
+        # Validate required_parameters values
+        valid_parameters = True
+
         harvester_types = [
             'geonetwork',
             'webdav',
@@ -615,21 +644,52 @@ class ResourceImporter():
             'ogcwxs',
             'geoPREST'
         ]
-        if (harvester_type in harvester_types) and len(harvester_name) > 0 and type(harvester_name) == str:
+
+        if None in required_parameters:
+            valid_parameters = False
+
+        if required_parameters['harvestertype'] not in harvester_types:
+            valid_parameters = False
+
+
+        # Search term management
+        xmlTemplate = """
+        <search>
+            <freeText>%s</freeText>
+        <search>
+        """
+
+        searches = ''
+        if len(required_parameters['searchterms']) > 0:
+            for search_term in list(required_parameters['searchterms']):
+                searches += xmlTemplate % search_term
+                searches += '\n'
+        else:
+            searches = xmlTemplate % ''
+
+        # Gather all parameters for XML file
+        other_parameters = dict
+        other_parameters['searches'] = searches
+        other_parameters['base_url'] = base_url
+        other_parameters['icon'] = icon
+
+        xmldata = required_parameters.copy()
+        xmldata.update(other_parameters)
+
+        if valid_parameters:
             # GeoPortal (geoPREST) Harvester XML
             # TODO: This is the only one supported at the moment
-            if harvester_type == 'geoPREST':
-                # TODO: The harvester name should probably be the RR id
+            if required_parameters['harvestertype'] == 'geoPREST':
                 xml = '''<?xml version='1.0' encoding='utf-8'?>
                 <node id=type=\"%s\">
                          <site>
-                           <name>%s</name>
-                           <baseUrl>http://www.ngdc.noaa.gov/geoportal</baseUrl>
-                           <icon>OOI_LogoBlack.png</icon>
+                           <name>%(name)s</name>
+                           <baseUrl>%(base_url)s</baseUrl>
+                           <icon>%(icon)s</icon>
                          </site>
                          <content>
                            <validate>false</validate>
-                           <importxslt>gmiTogmd.xsl</importxslt>
+                           <importxslt>%(importxslt)s</importxslt>
                          </content>
                          <options>
                            <every>0 0 0 ? * *</every>
@@ -637,12 +697,7 @@ class ResourceImporter():
                            <status>inactive</status>
                          </options>
                          <searches>
-                           <search>
-                             <freeText>multibeam~</freeText>
-                           </search>
-                           <search>
-                             <freeText>RI</freeText>
-                           </search>
+                           %(searches)s
                          </searches>
                          <privileges>
                            <group id=\"1\">
@@ -654,9 +709,13 @@ class ResourceImporter():
                          <categories>
                            <category id="2" />
                          </categories>
-                        </node>''' % (harvester_type, harvester_name)
-
-            return xml
+                        </node>''' % xmldata
+                return xml
+            elif required_parameters['harvestertype'] == 'ogcwxs':
+                xml = ''
+                return xml
+            else:
+                return False
         else:
             self.logger.error('Could not create harvester XML definition based on supplied input!')
             return False

@@ -32,6 +32,10 @@ eoi:
         add_layer: addlayer
         remove_layer: removelayer
         reset_store: resetstore
+#neptune sos handler service        
+    neptune_sos_handler:
+        server: http://localhost
+        port: 8846  
 #coverageFDWSever        
     fdw:
         server: cov_srv

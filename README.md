@@ -30,6 +30,8 @@ NOTE: postgres needs to be buildout against pyon 2.7.X other wise things will no
 
 ### Typical use of FDW
 
+i suggest reading information on FDW from the [multicorn page](http://multicorn.org/foreign-data-wrappers) before proceding
+
 * Create the extension
 ```
 CREATE EXTENSION multicorn

@@ -16,10 +16,25 @@ __author__ = "abird"
 
 class Handler():
 	def __init__(self):
-		self.PORT = 5454
+		logger = logging.getLogger('importer_service')
+        hdlr = logging.FileHandler('importer_service.log')
+        formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        hdlr.setFormatter(formatter)
+        logger.addHandler(hdlr) 
+        logger.setLevel(logging.DEBUG)
+
+        self.logger = logger
+        self.logger.info("Setting up neptune handler service...")
+
 		self.startup()
 
 	def startup(self):	
+
+		stream = open("../extern.yml", 'r')
+        ion_config = yaml.load(stream)
+
+        self.PORT = ion_config['eoi']['neptune_sos_handler']['port']
+        self.logger.info('Serving Neptune Handler on '+str(self.PORT)+'...')
 		server = WSGIServer(('', self.PORT), self.application).serve_forever()
 
 	def application(self,env, start_response):	        

@@ -16,17 +16,28 @@ from geoserver.support import prepare_upload_bundle, url
 import httplib2
 import json
 import requests
+from BeautifulSoup import *
 import ast
 import yaml
 import logging
+
 __author__ = "abird"
 
+# GeoServer
 ADDLAYER = "addlayer"
 REMOVELAYER = "removelayer"
 UPDATELAYER = "updatelayer"
 RESETSTORE = "resetstore"
 LISTLAYERS = "listlayers"
 ALIVE = "alive"
+
+# GeoNetwork
+REQUEST_HARVESTER = "requestharvester"
+CREATE_HARVESTER = "createharvester"
+REMOVE_HARVESTER = "removeharvester"
+START_HARVESTER = "startharvester"
+STOP_HARVESTER = "stopharvester"
+RUN_HARVESTER = "runharvester"
 
 KEY_SERVICE = 'service'
 KEY_NAME = 'name'
@@ -72,12 +83,17 @@ class ResourceImporter():
         self.LAYER_PREFIX = ion_config['eoi']['geoserver']['layer_prefix']
         self.LAYER_SUFFIX = ion_config['eoi']['geoserver']['layer_suffix']
 
+        self.GEONETWORK_BASE_URL = ion_config['eoi']['geonetwork']['base_url']
+        self.GEONETWORK_USER = ion_config['eoi']['geonetwork']['user_name']
+        self.GEONETWORK_PASS = ion_config['eoi']['geonetwork']['password']
+        self.GEONETWORK_ICON = ion_config['eoi']['geonetwork']['icon']
+
         self.logger.info("parsed attributes")
 
         self.logger.info('Serving on '+str(self.PORT)+'...')
         server = WSGIServer(('', self.PORT), self.application).serve_forever()
 
-    def application(self,env, start_response):
+    def application(self, env, start_response):
         request = env['PATH_INFO']
         request = request[1:]
         cat = Catalog(self.SERVER, self.U_NAME, self.P_WD)
@@ -95,51 +111,338 @@ class ResourceImporter():
                     param_dict[params[0]] = params[1]
 
                 #parse request
-                if (param_dict.has_key(KEY_SERVICE)):
-                    if (param_dict[KEY_SERVICE] == ALIVE):
-                         start_response('200 ok', [('Content-Type', 'text/html')])
-                         return ['<b>ALIVE<BR>' + request + '<br>'+ output +'</b>']
-                    elif (param_dict[KEY_SERVICE] == ADDLAYER):
-                        if (param_dict.has_key(KEY_NAME) and param_dict.has_key(KEY_ID)):
+                if param_dict.has_key(KEY_SERVICE):
+                    if param_dict[KEY_SERVICE] == ALIVE:
+                        start_response('200 ok', [('Content-Type', 'text/html')])
+                        return ['<b>ALIVE<BR>' + request + '<br>' + output + '</b>']
+                    elif param_dict[KEY_SERVICE] == ADDLAYER:
+                        if param_dict.has_key(KEY_NAME) and param_dict.has_key(KEY_ID):
                             if param_dict.has_key(PARAMS):
-                                self.create_layer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS,param_dict[PARAMS])
+                                self.create_layer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS, param_dict[PARAMS])
                             else:
                                 start_response('400 Bad Request', [('Content-Type', 'text/html')])
-                                return ['<b>ERROR NO PARAMS<BR>' + request + '<br>'+ output +'</b>']    
+                                return ['<b>ERROR NO PARAMS<BR>' + request + '<br>' + output + '</b>']
                         else:
                             start_response('400 Bad Request', [('Content-Type', 'text/html')])
-                            return ['<b>ERROR NO ID or NAME<BR>' + request + '<br>'+ output +'</b>']    
+                            return ['<b>ERROR NO ID or NAME<BR>' + request + '<br>' + output + '</b>']
 
-                    elif (param_dict[KEY_SERVICE] == REMOVELAYER):
-                        if (param_dict.has_key(KEY_NAME) and param_dict.has_key(KEY_ID)):
-                            self.remove_layer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS,cat)
+                    elif param_dict[KEY_SERVICE] == REMOVELAYER:
+                        if param_dict.has_key(KEY_NAME) and param_dict.has_key(KEY_ID):
+                            self.remove_layer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS, cat)
 
-                    elif (param_dict[KEY_SERVICE] == UPDATELAYER):
-                        self.remove_layer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS,cat)
-                        self.createLayer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS,param_dict[PARAMS])
+                    elif param_dict[KEY_SERVICE] == UPDATELAYER:
+                        self.remove_layer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS, cat)
+                        self.createLayer(param_dict[KEY_NAME], self.GEO_STORE, self.GEO_WS, param_dict[PARAMS])
                         self.logger.info(UPDATELAYER)
 
-                    elif (param_dict[KEY_SERVICE] == LISTLAYERS):
+                    elif param_dict[KEY_SERVICE] == LISTLAYERS:
                         layer_list_ret = self.get_layer_list(cat)
                         self.logger.info(UPDATELAYER)
                         self.logger.info(layer_list_ret)
                         output = ''.join(layer_list_ret)
                         self.logger.info(output)
 
-                    elif (param_dict[KEY_SERVICE] == RESETSTORE):
-                       self.reset_data_store(cat)
+                    elif param_dict[KEY_SERVICE] == RESETSTORE:
+                        self.reset_data_store(cat)
+
+                    # GeoNetwork Service Calls
+                    #
+                    # Obtain list of current harvesters, i.e. is the service ALIVE?
+                    elif param_dict[KEY_SERVICE] == REQUEST_HARVESTER:
+                        r = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get', auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                        if r.status_code == 200:
+                            nodes = self.get_geonetwork_nodes(r.text)
+
+                            if len(nodes) > 0:
+                                start_response('200 ok', [('Content-Type', 'application/xml')])
+                                return [r.content]
+                            else:
+                                start_response('200 ok', [('Content-Type', 'text/html')])
+                                return ['<b>ALIVE - NO HARVESTER NODES DEFINED<BR>' + request + '</b>']
+                        else:
+                            start_response(str(r.status_code), [('Content-Type', 'text/html')])
+                            return ['<b>ERROR</b>']
+
+                    # Create new harvester
+                    elif param_dict[KEY_SERVICE] == CREATE_HARVESTER:
+                        # TODO: Check that harvester doesn't already exist (use name field from RR and GN harvester name)
+                        # TODO: If it does, make sure to update with new params by DROP/ADD method
+
+                        # Make sure the service is ALIVE
+                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
+                                               auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                        required_parameters = {
+                            'id': None,                         # id=6a9e7082c36b4facb915e36488376328
+                            #'ownerid': None,
+                            'lcstate': None,                    # lcstate=DEPLOYED&
+                            #'org_ids': None,
+                            #'providerids': None,
+                            'externalize': None,                # externalize=0&
+                            'name': None,                       # name=ooi&
+                            'description': None,                # description=OOI&
+                            'datasourcetype': None,             # datasourcetype=sos&
+                            'harvestertype': None,              # harvestertype=ogcwxs&
+                            'searchterms': None,                # searchterms=&
+                            'importxslt': None,                 # importxslt=&
+                            'ogctype': None,                    # ogctype=SOS1.0.0&
+                            'connectionparams': None,           # connectionparams={}&
+                            'datasourceattributes': None,       # datasourceattributes={}&
+                            'protocoltype': None,               # institution={'website': '', 'phone': '', 'name': '', 'email': ''}&
+                            'institution': None                 # protocoltype=&
+                            #'contact': None
+                        }
+
+                                                                # rev=1&
+                                                                # availability=AVAILABLE&
+                                                                # persistedversion=1&
+                                                                # addl={}&
+                                                                # visibility=1&
+                                                                # tsupdated=1399467966285&
+                                                                # tscreated=1399467966285&
+                                                                # altids=['PRE:EDSID3']&
+
+                        for required_parameter in required_parameters:
+                            if required_parameter in param_dict:
+                                required_parameters[required_parameter] = param_dict[required_parameter]
+                            else:
+                                self.logger.warn('Parameter %s is missing.' % required_parameter)
+
+                        # if r_check.status_code == 200 and None not in required_parameters.values():
+                        if r_check.status_code == 200:
+                            #Set the proper XML payload based on the type and configuration of the harvester
+                            payload = self.configure_xml_harvester_add_xml(required_parameters, self.GEONETWORK_ICON)
+
+                            # Check to ensure the XML payload returned properly
+                            if payload is not False:
+                                headers = {'Content-Type': 'application/xml'}
+                                r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.add',
+                                                  data=payload,
+                                                  headers=headers,
+                                                  auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                                if r.status_code == 200:
+                                    output = str(r.text)
+                                    start_response('200 ok', [('Content-Type', 'text/html')])
+                                    #return ['<b>ALIVE & ADDED<BR>' + request + '<br>' + output + '</b>']
+                                    return ['<b>ALIVE & ADDED<br>' + request + '</b></br>' + output]
+                            else:
+                                # XML payload configuration failed
+                                self.logger.error("XML payload configuration failed")
+                        else:
+                            start_response(str(r_check.status_code), [('Content-Type', 'text/html')])
+                            response_str = '<b>ERROR: %s Creating Harvester</b></br>' % r_check.status_code
+                            for p in required_parameters:
+                                response_str += '%s </br>' % p
+                            return [response_str]
+
+                    # Remove ALL harvesters associated with external observatories
+                    elif param_dict[KEY_SERVICE] == REMOVE_HARVESTER:
+                        # Make sure the service is ALIVE
+                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
+                                               auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                        # Check that the harvester filter (hfilter) is set in the URL parameters
+                        # Default to activate all harvesters
+                        hfilter = 'none'
+                        if 'hfilter' in param_dict:
+                            hfilter = param_dict['hfilter']
+
+                        harvesters, r = self.get_harvesters(hfilter)
+
+                        if (r_check.status_code == 200) and (len(harvesters) > 0):
+                            #Set the proper XML payload based on the type and configuration of the harvester
+                            payload = '''<?xml version='1.0' encoding='utf-8'?>
+                            <request>'''
+                            for hkey in harvesters.keys():
+                                payload += '''<id>%s</id>''' % hkey
+                            payload += '''</request>'''
+                            print payload
+                            # Send the POST to start the harvester scheduler
+                            headers = {'Content-Type': 'application/xml'}
+                            r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.remove',
+                                              data=payload,
+                                              headers=headers,
+                                              auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                            if r.status_code == 200:
+                                output = str(r.text)
+                                start_response('200 ok', [('Content-Type', 'text/html')])
+                                response_str = '<b>HARVESTER(s) REMOVED<br>' + request + '</b></br>' + output
+                                return response_str
+                            else:
+                                start_response('200 ok', [('Content-Type', 'text/html')])
+                                response_str = '<b>HARVESTER(s) FAILED TO BE REMOVED</b>'
+                                return [response_str]
+                        else:
+                            start_response('200 ok', [('Content-Type', 'text/html')])
+                            response_str = '<b>NO HARVESTER(s) TO REMOVE</b>'
+                            return [response_str]
+
+                    # Start automated harvester based on defined scheduled time
+                    elif param_dict[KEY_SERVICE] == START_HARVESTER:
+                        # Make sure the service is ALIVE
+                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
+                                               auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                        # Check that the harvester filter (hfilter) is set in the URL parameters
+                        # Default to activate all harvesters
+                        hfilter = 'none'
+                        if 'hfilter' in param_dict:
+                            hfilter = param_dict['hfilter']
+
+                        harvesters, r = self.get_harvesters(hfilter)
+
+                        if (r_check.status_code == 200) and (len(harvesters) > 0):
+                            #Set the proper XML payload based on the type and configuration of the harvester
+                            payload = '''<?xml version='1.0' encoding='utf-8'?>
+                            <request>'''
+                            for hkey in harvesters.keys():
+                                payload += '''<id>%s</id>''' % hkey
+                            payload += '''</request>'''
+                            print payload
+                            # Send the POST to start the harvester scheduler
+                            headers = {'Content-Type': 'application/xml'}
+                            r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.start',
+                                              data=payload,
+                                              headers=headers,
+                                              auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                            if r.status_code == 200:
+                                output = str(r.text)
+                                start_response('200 ok', [('Content-Type', 'text/html')])
+                                response_str = '<b>HARVESTER(s) STARTED<br>' + request + '</b></br>' + output
+                                return response_str
+                            else:
+                                start_response('200 ok', [('Content-Type', 'text/html')])
+                                response_str = '<b>HARVESTER(s) FAILED TO START</b>'
+                                return [response_str]
+                        else:
+                            start_response('200 ok', [('Content-Type', 'text/html')])
+                            response_str = '<b>NO HARVESTER(s) TO START</b>'
+                            return [response_str]
+
+                    # Stop harvester
+                    elif param_dict[KEY_SERVICE] == STOP_HARVESTER:
+                        # Make sure the service is ALIVE
+                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
+                                               auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                        # Check that the harvester filter (hfilter) is set in the URL parameters
+                        # Default to activate all harvesters
+                        hfilter = 'none'
+                        if 'hfilter' in param_dict:
+                            hfilter = param_dict['hfilter']
+
+                        harvesters, r = self.get_harvesters(hfilter)
+
+                        if (r_check.status_code == 200) and (len(harvesters) > 0):
+                            #Set the proper XML payload based on the type and configuration of the harvester
+                            payload = '''<?xml version='1.0' encoding='utf-8'?>
+                            <request>'''
+                            for hkey in harvesters.keys():
+                                payload += '''<id>%s</id>''' % hkey
+                            payload += '''</request>'''
+                            print payload
+                            # Send the POST to start the harvester scheduler
+                            headers = {'Content-Type': 'application/xml'}
+                            r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.stop',
+                                              data=payload,
+                                              headers=headers,
+                                              auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                            if r.status_code == 200:
+                                output = str(r.text)
+                                start_response('200 ok', [('Content-Type', 'text/html')])
+                                response_str = '<b>HARVESTER(s) STOPPED<br>' + request + '</b></br>' + output
+                                return response_str
+                            else:
+                                start_response('200 ok', [('Content-Type', 'text/html')])
+                                response_str = '<b>HARVESTER(s) FAILED TO STOP</b>'
+                                return [response_str]
+                        else:
+                            start_response('200 ok', [('Content-Type', 'text/html')])
+                            response_str = '<b>NO HARVESTER(s) TO STOP</b>'
+                            return [response_str]
+
+                    # Run harvester on-demand)
+                    elif param_dict[KEY_SERVICE] == RUN_HARVESTER:
+                        # Make sure the service is ALIVE
+                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
+                                               auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                        # Check that the harvester filter (hfilter) is set in the URL parameters
+                        # Default to activate all harvesters
+                        hfilter = 'none'
+                        if 'hfilter' in param_dict:
+                            hfilter = param_dict['hfilter']
+
+                        harvesters, r = self.get_harvesters(hfilter)
+
+                        if (r_check.status_code == 200) and (len(harvesters) > 0):
+                            #Set the proper XML payload based on the type and configuration of the harvester
+                            payload = '''<?xml version='1.0' encoding='utf-8'?>
+                            <request>'''
+                            for hkey in harvesters.keys():
+                                payload += '''<id>%s</id>''' % hkey
+                            payload += '''</request>'''
+                            print payload
+                            # Send the POST to run a harvester on-demand
+                            headers = {'Content-Type': 'application/xml'}
+                            r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.run',
+                                              data=payload,
+                                              headers=headers,
+                                              auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+
+                            if r.status_code == 200:
+                                output = str(r.text)
+                                start_response('200 ok', [('Content-Type', 'text/html')])
+                                response_str = '<b>HARVESTER(s) RUNNING<br>' + request + '</b></br>' + output
+                                return response_str
+                            else:
+                                start_response('200 ok', [('Content-Type', 'text/html')])
+                                response_str = '<b>HARVESTER(s) FAILED TO RUN</b>'
+                                return [response_str]
+                        else:
+                            start_response('200 ok', [('Content-Type', 'text/html')])
+                            response_str = '<b>NO HARVESTER(s) TO RUN</b>'
+                            return [response_str]
 
         start_response('200 OK', [('Content-Type', 'text/html')])
-        return ['<b>' + request + '<br>'+ output +'</b>']
+        return ['<b>' + request + '<br>' + output + '</b>']
 
+    def get_harvesters(self, harvester_filter=None):
+        harvesters = {}
+        try:
+            r = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get', auth=('admin', 'admin'))
+            if r.status_code == 200:
+                soup = BeautifulSoup(r.text)
+                nodes = soup.findAll('node')
+                for node in nodes:
+                    hid = str(node['id'])
+                    htype = str(node['type'])
+                    site = node.find('site')
+                    name = str(site.find('name').text)
+                    uuid = str(site.find('uuid').text)
+                    if (harvester_filter == name) or (harvester_filter == 'all'):
+                        harvesters[hid] = {'type': htype, 'name': name, 'uuid': uuid}
+            return harvesters, r
+        except IOError:
+            self.logger.error('Could not retrieve harvester node list!')
+
+    def get_geonetwork_nodes(self, response_xml):
+        soup = BeautifulSoup(response_xml)
+        nodes = soup.findAll("node")
+        return nodes
 
     def get_geo_store_params(self,):
         #rpsdev = 'Session startup SQL': 'select runCovTest();\nselect 1 from covtest limit 1;',
-        session_startup =""
-        if (self.SESSION_START_UP_ln1 is not None):
+        session_startup = ""
+        if self.SESSION_START_UP_ln1 is not None:
             session_startup+=self.SESSION_START_UP_ln1 + '\n'
-        if (self.SESSION_START_UP_ln2 is not None):
-            session_startup+=self.SESSION_START_UP_ln2
+        if self.SESSION_START_UP_ln2 is not None:
+            session_startup += self.SESSION_START_UP_ln2
             
         params = {
             'Connection timeout': '20',
@@ -164,7 +467,7 @@ class ResourceImporter():
         }
         return params
 
-    def get_layer_list(self,cat):
+    def get_layer_list(self, cat):
         layer_list = []
         layer_list.append('List Of DataLayers')
         layer_list.append('<br>')
@@ -175,13 +478,12 @@ class ResourceImporter():
             for d in geo_store.get_resources():
                 layer_list.append(d.name)
                 layer_list.append('<br>')
-        except Exception,e:
-            self.logger.info("issue getting layers:"+str(e))
+        except Exception, e:
+            self.logger.info("issue getting layers:" + str(e))
 
         return layer_list    
 
-
-    def reset_data_store(self,cat):
+    def reset_data_store(self, cat):
         self.logger.info(RESETSTORE)
         geo_ws = cat.get_workspace(self.GEO_WS)
         try:
@@ -189,7 +491,7 @@ class ResourceImporter():
             #remove all the things if it has resources
             for d in geo_store.get_resources():
                 layer = cat.get_layer(d.name)
-                if (layer):
+                if layer:
                     #delete the layer
                     cat.delete(layer)
                     #delete the actual file
@@ -209,12 +511,12 @@ class ResourceImporter():
             self.logger.info("issue getting/removing datastore:"+str(e))
 
         try:
-            if (cat.get_store(self.GEO_STORE)):
+            if cat.get_store(self.GEO_STORE):
                 #store exists for some reason was not removed!?
                 self.logger.info("using existing datastore")
         except Exception, e:
             self.logger.info("create new")
-            #store does not exist create it, the prefered outcome 
+            #store does not exist create it, the preferred outcome
             geo_store = cat.create_datastore(self.GEO_STORE, geo_ws)
             geo_store.capabilitiesURL = "http://www.geonode.org/"
             geo_store.type = "PostGIS"
@@ -245,7 +547,7 @@ class ResourceImporter():
         except Exception:
             self.logger.info("issue getting/removing data layer/resource")
 
-    def create_layer(self,layer_name, store_name, workspace_name,params):
+    def create_layer(self, layer_name, store_name, workspace_name, params):
         self.logger.info(ADDLAYER)
         xml = '''<?xml version='1.0' encoding='utf-8'?>
             <featureType>
@@ -309,7 +611,7 @@ class ResourceImporter():
     		  </store>
     		  <maxFeatures>0</maxFeatures>
     		  <numDecimals>0</numDecimals>
-    		  '''% (self.LAYER_PREFIX,layer_name, self.LAYER_SUFFIX ,layer_name,workspace_name, layer_name , layer_name, store_name)
+    		  '''% (self.LAYER_PREFIX, layer_name, self.LAYER_SUFFIX ,layer_name, workspace_name, layer_name, layer_name, store_name)
               
         xml += "<attributes>"
 
@@ -348,7 +650,7 @@ class ResourceImporter():
 
         #get the existing layer
         self.logger.info("statusCode: getLayer:"+str(r.status_code))
-        if (r.status_code==200):
+        if r.status_code == 200:
             xml = r.text
             findString = ('</resource>')
             val= xml.find(findString)
@@ -366,7 +668,7 @@ class ResourceImporter():
             self.logger.info("could not get layer, check it exists... "+r.text)    
         pass
 
-    def add_attributes(self,param,param_type):
+    def add_attributes(self, param, param_type):
 
         attribute = "<attribute>"
         attribute += "<name>"+param+"</name>"
@@ -390,4 +692,148 @@ class ResourceImporter():
         attribute += "</attribute>"
 
         return attribute
+
+    def configure_xml_harvester_add_xml(self, required_parameters, icon):
+        # Validate required_parameters values
+        valid_parameters = True
+
+        harvester_types = [
+            'geonetwork',
+            'webdav',
+            'csw',
+            'z3950',
+            'oaipmh',
+            'thredds',
+            'wfsfeatures',
+            'filesystem',
+            'arcsde',
+            'ogcwxs',
+            'geoPREST'
+        ]
+
+        if None in required_parameters:
+            valid_parameters = False
+
+        if required_parameters['harvestertype'] not in harvester_types:
+            valid_parameters = False
+
+        # Search term management
+        xmlTemplate = """<search>
+            <freeText>%s</freeText>
+        </search>"""
+        search_terms = required_parameters['searchterms'].split(',')
+        searches = ''
+        if len(required_parameters['searchterms']) > 0:
+            for search_term in search_terms:
+                searches += xmlTemplate % search_term
+                searches += '\n'
+        else:
+            searches = xmlTemplate % ''
+
+        # Gather all parameters for XML file
+        other_parameters = {}
+        other_parameters['searches'] = searches
+        other_parameters['icon'] = icon
+        other_parameters['baseurl'] = required_parameters['protocoltype']
+
+        xmldata = required_parameters.copy()
+        xmldata.update(other_parameters)
+
+        if valid_parameters:
+            # GeoPortal (geoPREST) Harvester XML
+            # TODO: This is the only one supported at the moment
+            if required_parameters['harvestertype'] == 'geoPREST':
+                xml = '''<?xml version='1.0' encoding='utf-8'?>
+                <node type=\"%(harvestertype)s\">
+                    <owner>
+                        <id>1</id>
+                    </owner>
+                    <ownerGroup>
+                        <id>3</id>
+                    </ownerGroup>
+                    <site>
+                        <name>%(name)s</name>
+                        <account>
+                            <use>true</use>
+                            <username/>
+                            <password/>
+                        </account>
+                        <baseUrl>%(baseurl)s</baseUrl>
+                        <icon>%(icon)s</icon>
+                    </site>
+                    <content>
+                        <validate>false</validate>
+                        <importxslt>%(importxslt)s</importxslt>
+                    </content>
+                    <options>
+                        <every>0 0 0 ? * *</every>
+                        <oneRunOnly>true</oneRunOnly>
+                        <status>inactive</status>
+                    </options>
+                    <searches>
+                        %(searches)s
+                    </searches>
+                    <privileges>
+                        <group id=\"3\">
+                            <operation name=\"view\" />
+                            <operation name=\"dynamic\" />
+                            <operation name=\"featured\" />
+                        </group>
+                    </privileges>
+                    <categories>
+                        <category id="2" />
+                    </categories>
+                </node>''' % xmldata
+                print xml
+                return xml
+            elif required_parameters['harvestertype'] == 'ogcwxs':
+                xml = '''<?xml version='1.0' encoding='utf-8'?>
+                <node type=\"%(harvestertype)s\">
+                    <owner>
+                        <id>1</id>
+                    </owner>
+                    <ownerGroup>
+                        <id>3</id>
+                    </ownerGroup>
+                    <site>
+                        <name>%(name)s</name>
+                        <account>
+                            <use>false</use>
+                            <username/>
+                            <password/>
+                        </account>
+                        <url>
+                            %(baseurl)s
+                        </url>
+                        <ogctype>%(ogctype)s</ogctype>
+                        <icon>%(icon)s</icon>
+                    </site>
+                    <content>
+                        <validate>false</validate>
+                        <importxslt>none</importxslt>
+                    </content>
+                    <options>
+                        <every>0 0 17 ? * *</every>
+                        <oneRunOnly>false</oneRunOnly>
+                        <status>inactive</status>
+                        <lang>eng</lang>
+                        <topic>oceans</topic>
+                        <createThumbnails>true</createThumbnails>
+                        <useLayer>true</useLayer>
+                        <useLayerMd>true</useLayerMd>
+                        <datasetCategory>2</datasetCategory>
+                        <outputSchema>iso19139</outputSchema>
+                    </options>
+                    <categories>
+                        <category id="2"/>
+                    </categories>
+                    <info>
+                </node>''' % xmldata
+                print xml
+                return xml
+            else:
+                return False
+        else:
+            self.logger.error('Could not create harvester XML definition based on supplied input!')
+            return False
 

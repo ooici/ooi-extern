@@ -258,7 +258,7 @@ class ResourceImporter():
                             for hkey in harvesters.keys():
                                 payload += '''<id>%s</id>''' % hkey
                             payload += '''</request>'''
-                            print payload
+                            #print payload
                             # Send the POST to start the harvester scheduler
                             headers = {'Content-Type': 'application/xml'}
                             r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.remove',
@@ -301,7 +301,7 @@ class ResourceImporter():
                             for hkey in harvesters.keys():
                                 payload += '''<id>%s</id>''' % hkey
                             payload += '''</request>'''
-                            print payload
+                            #print payload
                             # Send the POST to start the harvester scheduler
                             headers = {'Content-Type': 'application/xml'}
                             r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.start',
@@ -344,7 +344,7 @@ class ResourceImporter():
                             for hkey in harvesters.keys():
                                 payload += '''<id>%s</id>''' % hkey
                             payload += '''</request>'''
-                            print payload
+                            #print payload
                             # Send the POST to start the harvester scheduler
                             headers = {'Content-Type': 'application/xml'}
                             r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.stop',
@@ -387,7 +387,7 @@ class ResourceImporter():
                             for hkey in harvesters.keys():
                                 payload += '''<id>%s</id>''' % hkey
                             payload += '''</request>'''
-                            print payload
+                            #print payload
                             # Send the POST to run a harvester on-demand
                             headers = {'Content-Type': 'application/xml'}
                             r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.run',
@@ -784,7 +784,7 @@ class ResourceImporter():
                         <category id="2" />
                     </categories>
                 </node>''' % xmldata
-                print xml
+                #print xml
                 return xml
             elif required_parameters['harvestertype'] == 'ogcwxs':
                 xml = '''<?xml version='1.0' encoding='utf-8'?>
@@ -827,9 +827,9 @@ class ResourceImporter():
                     <categories>
                         <category id="2"/>
                     </categories>
-                    <info>
+                    <info/>
                 </node>''' % xmldata
-                print xml
+                #print xml
                 return xml
             else:
                 return False

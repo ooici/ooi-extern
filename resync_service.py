@@ -10,8 +10,10 @@ from bs4 import *
 import ast
 import yaml
 import logging
-
+import psycopg2
 import time
+import simplejson as json
+import numpy as np
 
 __author__ = "abird"
 
@@ -20,7 +22,8 @@ __author__ = "abird"
 
 #headers
 headers = {'content-type': 'application/xml'}
-req_harvesters = "requestedharvesters"
+sync_harvesters = "syncharvesters"
+
 
 class DataProductImporter():
 	def __init__(self):
@@ -39,7 +42,16 @@ class DataProductImporter():
 		ion_config = yaml.load(stream)
 		self.logger.info("opened yml file")
 
+		##TODO add to yml file
+		self.GEONETWORK_SERVER = "http://r3-pg-test02.oceanobservatories.org:8080"
+		self.GEONETWORK_DB_SERVER = "r3-pg-test02.oceanobservatories.org"
+		self.GEONETWORK_DB = "geonetwork"
 		self.RR_PORT = 8848
+		self.GEONETWORK_USER = 'ooici'
+		self.GEONETWORK_PASS= 'ooici'
+
+		self.SGS_URL = self.url = 'http://%s:%s/ion-service/' % ('localhost', 5000)
+
 
 		self.logger.info('Serving on '+str(self.RR_PORT)+'...')
 		server = WSGIServer(('', self.RR_PORT), self.application).serve_forever()
@@ -59,12 +71,20 @@ class DataProductImporter():
 					params = param.split("=")
  					param_dict[params[0]] = params[1]
 
-				if param_dict.has_key(req_harvesters) and param_dict.has_key("ooi"):
-					site_dict = self.get_harvester_list()
-					self.get_all_available_meta_data_records(site_dict)		
+				if param_dict.has_key(sync_harvesters) and param_dict.has_key("ooi"):
+					try:
+						print "requested sync harvesters:",param_dict[sync_harvesters]
+						site_dict = self.get_harvester_list()
+						#self.get_all_available_meta_data_records(site_dict)		
+						self.get_meta_data_records_for_harvester(site_dict)
 
-					start_response('200 ok', [('Content-Type', 'text/html')])
-					return ['<b>ALIVE<BR>' + request + '</b>']
+						start_response('200 ok', [('Content-Type', 'text/html')])
+						return ['<b>ALIVE<BR>' + request + '</b>']
+					except Exception, e:
+						start_response('400 Bad Request', [('Content-Type', 'text/html')])
+						return ['<b>ERROR IN HARVESTER, CHECK CONNECTION<BR>' + request + '<br>' + output + '</b>']				
+					
+					
 				else:
 					start_response('400 Bad Request', [('Content-Type', 'text/html')])
 					return ['<b>ERROR IN PARAMS<BR>' + request + '<br>' + output + '</b>']					
@@ -77,7 +97,7 @@ class DataProductImporter():
 		'''
 		creates a dict of the harvester names and id's that are valid 
 		'''
-		r = requests.get('http://eoi-dev1.oceanobservatories.org:8080/geonetwork/srv/eng/harvesting/xml.harvesting.get',auth=("admin","admin"),headers=headers)
+		r = requests.get(self.GEONETWORK_SERVER+'/geonetwork/srv/eng/harvesting/xml.harvesting.get',auth=("admin","admin"),headers=headers)
 		r.status_code
 		soup = BeautifulSoup(r.text)
 		sites = soup.find_all("site")
@@ -86,57 +106,119 @@ class DataProductImporter():
 		accept_list = ["neptune","ioos","ioos2"]
 
 		for site in sites:    
-		    name = site.find("name").text
-		    if name in accept_list:
-		        uuid = site.find("uuid").text
-		        site_dict[uuid] = name
+			name = site.find("name").text
+			if name in accept_list:
+				uuid = site.find("uuid").text
+				site_dict[uuid] = name
 		return site_dict
 
-	def get_all_available_meta_data_records(self,site_dict):		
-		'''
-		get all resources
-		'''
-		r = requests.get('http://eoi-dev1.oceanobservatories.org:8080/geonetwork/srv/eng/xml.search',auth=("admin","admin"),headers=headers)
-		r.status_code
-		soup = BeautifulSoup(r.text)
-		meta_data_records = soup.find_all("geonet:info")
+	def get_meta_data_records_for_harvester(self,site_dict):
+		records =[]
+		try:
+			conn = psycopg2.connect(database=self.GEONETWORK_DB, user=self.GEONETWORK_USER, password=self.GEONETWORK_PASS,host=self.GEONETWORK_DB_SERVER)
+			cursor = conn.cursor()
+			# execute our Query
+			for site_uuid in site_dict.keys():
+				cursor.execute("SELECT uuid,data from metadata WHERE harvestuuid='"+site_uuid+"' ")
+				records = cursor.fetchall()
+				print "number of records...",len(records)
+				for rec in records:
+					uuid = rec[0]
+					soup = BeautifulSoup(rec[1])
+					#get the identification information for the place
+					rec_name = uuid
+					rec_descrip = ""
+					try:						
+						rec_name = self.getnameinfo(soup)
+						rec_descrip = self.getidentinfo(soup)            
+						self.getKeyWords(soup)
+						self.getGeoExtent(soup)
+						dt = self.getTemporalExtent(soup)
+						print rec_name,rec_descrip
+					except Exception, e:
+						print "error getting nodes:",e,"\nUSING:",rec_name,"\n",rec_descrip
 
-		#loop through the records and get the meta data
-		count = 0
-		t0 = time.time()
-		for record in meta_data_records:
-			try:
-				rec_source = record.find("source").text		        
-				#is the source in the list
-				if rec_source in site_dict.keys():
-					#which harvester did it come from?
-					from_name = site_dict[rec_source]
-					count +=1
-					rec_id = record.find("id").text
-					get_meta_data_record(rec_id)
-					rec_uuid = record.find("uuid").text
-					rec_schema = record.find("schema").text
-					rec_create = record.find("createDate").text
-					rec_change = record.find("changeDate").text
-					rec_cat = record.find("category").text
+					#add the data to the RR	
+					self.request_and_create_resource('resource_registry', 'create', object ={"name":rec_name, "description":rec_descrip , "type_":"ExternalDataset"})	
 
-			except Exception:
-				#just pass on to the next one if we encounter an error
-				 pass
-		t1 = time.time()
-		print "Total number:",len(meta_data_records)
-		print "Count of valid ones:",count
-		print "Total time:", t1-t0
+		except Exception, e:
+			print e,": I am unable to connect to the database..."
+			pass
 
-	def get_meta_data_record(self,uuid):
-		'''
-		get the meta data for a given uuid meta data resource
-		'''
-		payload = '''<?xml version="1.0" encoding="UTF-8"?>
-            <request>
-            	<uuid>%s</uuid>
-            </request>''' % (uuid)
+	def request_and_create_resource(self,service_name, op, **kwargs):
+		url = self.SGS_URL
+		url = url + service_name + '/' + op
+		r = { "serviceRequest": { 
+				"serviceName" : service_name, 
+				"serviceOp" : op, 
+				"params" : kwargs
+				}
+			}
 
-		r = requests.post('http://eoi-dev1.oceanobservatories.org:8080/geonetwork/srv/eng/xml.metadata.get',data=payload,auth=("admin","admin"),headers=headers)
-		r.status_code
-		soup = BeautifulSoup(r.text)
+
+		resp = requests.post(url, data={'payload':Serializer.encode(r)})
+		if resp.status_code == 200:
+			data = resp.json()
+			if 'GatewayError' in data['data']:
+				#error = GatewayError(data['data']['Message'])
+				#error.trace = data['data']['Trace']
+				#raise error
+				pass
+			if 'GatewayResponse' in data['data']:
+				#return data['data']['GatewayResponse']
+				pass
+
+		#raise ConnectionError("HTTP [%s]" % resp.status_code)		
+	def getnameinfo(self,soup):
+		ab_info = soup.find("gmd:abstract")
+		pur_info = soup.find("gmd:purpose")
+		file_ident = soup.find("gmd:fileidentifier")
+		return file_ident.text.replace("\n","")
+
+	def getidentinfo(self,soup):
+		indent_info = soup.find("gmd:identificationinfo")
+		title = indent_info.find("gmd:title").text.rstrip()
+		alt_title = indent_info.find("gmd:alternatetitle").text.replace("\n","")
+		iden = indent_info.find("gmd:identifier").text.replace("\n","")
+		org_name = indent_info.find("gmd:organisationname").text.replace("\n","")
+		poc = indent_info.find("gmd:pointofcontact")
+		return title
+
+	def getKeyWords(self,soup):
+		keywords = soup.find("gmd:md_keywords")
+		deskeywords = soup.find("gmd:descriptivekeywords")
+
+
+    
+	def getGeoExtent(self,soup):
+		bound_list = ["westboundlongitude","eastboundlongitude","northboundlatitude","southboundlatitude"]
+		bbox = dict()  
+		geo_extent = soup.find("gmd:geographicelement")
+		for i in bound_list:
+			pos = geo_extent.find("gmd:"+i).text.replace("\n","")
+			bbox[i] = float(pos)
+		return bbox	
+
+	def getTemporalExtent(self,soup):                       
+		temporal_extent = soup.find("gmd:temporalelement")
+		start_dt = temporal_extent.find("gml:beginposition").text.replace("\n","")
+		end_dt = temporal_extent.find("gml:endposition").text.replace("\n","")
+		return [start_dt,end_dt]    
+
+
+class Serializer:
+
+	@classmethod
+	def encode(cls, message):
+		return json.dumps(message)
+
+	@classmethod
+	def decode(cls, message):
+		return json.loads(message, object_hook=cls._obj_hook)
+
+	@classmethod
+	def _obj_hook(cls, dct):
+		if '__np__' in dct:
+			dct = dct['__np__']
+			return np.array(dct['data'], dtype=dct['dtype'])
+		return dct

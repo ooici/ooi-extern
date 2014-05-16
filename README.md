@@ -395,6 +395,110 @@ CREATE SERVER cov_srv foreign data wrapper multicorn options (
 );
 ```
 
+## EOI VM Software Installation
+### GeoServer
+Get latest GeoServer WAR file from GeoNode here:
+`http://build.geonode.org/geoserver/latest/geoserver.war`
+and place in the following directory:
+`/usr/share/apache-tomcat-7.0.53/webapps/`
 
+### GeoNetwork
+Get latest GeoNetwork WAR file starting from this general location (dynamic link):
+`http://geonetwork-opensource.org/downloads.html`
 
+and place in the following directory:
+`/usr/share/apache-tomcat-7.0.53/webapps/`
 
+Change default database from H2 to PostgreSQL
+`cd $CATALINA_HOME\lib`
+`sudo wget http://jdbc.postgresql.org/download/postgresql-9.3-1101.jdbc41.jar`
+`sudo vi  /usr/share/apache-tomcat-7.0.53/conf/tomcat-users.xml`
+
+```
+<tomcat-users>
+  <role rolename="tomcat"/>
+  <role rolename="manager-gui"/>
+  <role rolename="manager-script"/>
+  <role rolename="manager-jmx"/>
+  <role rolename="manager-status"/>
+  <user username="admin" password="ooici" roles="tomcat,role1,manager-gui,manager-status"/>
+</tomcat-users>
+```
+
+Enable the PostgreSQL database in:
+`/usr/share/apache-tomcat-7.0.53/webapps/geonetwork/WEB-INF/config.xml`
+as follows: and ensure the default H2 resource is set to "false" (only one resource enabled)
+```
+                <!-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -->
+                <!-- postgresql -->
+                <!-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -->
+
+                <resource enabled="true">
+                        <name>main-db</name>
+                        <provider>jeeves.resources.dbms.ApacheDBCPool</provider>
+                        <config>
+                                <user>ooici</user>
+                                <password>ooici</password>
+                                <!-- we use org.postgis.DriverWrapper in place of
+                                org.postgresql.Driver to support both postgresql and postgis -->
+                                <driver>org.postgis.DriverWrapper</driver>
+                                <!--
+                                        jdbc:postgresql:database
+                                        jdbc:postgresql://host/database
+                                        jdbc:postgresql://host:port/database
+
+                                        or if you are using postgis and want the spatial index loaded
+                                        into postgis
+
+                                        jdbc:postgresql_postGIS://host:port/database
+
+                                -->
+                                <url>jdbc:postgresql_postGIS://localhost:5432/geonetwork</url>
+                                <poolSize>10</poolSize>
+                                <validationQuery>SELECT 1</validationQuery>
+                        </config>
+                </resource>
+```
+Ensure the root and user have the following in their respective .bash_profile:
+```
+# User specific environment and startup programs
+JAVA_HOME=/usr/java/jdk1.7.0_55
+export JAVA_HOME
+
+PATH=/opt/python2.7/bin:$PATH:$HOME/bin:$JAVA_HOME/bin
+PATH=/home/eoitest/ooi-extern/fdw:$PATH
+
+CATALINA_HOME=/usr/share/apache-tomcat-7.0.53
+
+export PATH
+export CATALINA_HOME
+```
+
+Ensure that /etc/init.d/tomcat has the following content:
+```
+#!/bin/bash
+# description: Tomcat Start Stop Restart
+# processname: tomcat
+# chkconfig: 234 20 80
+JAVA_HOME=/usr/java/jdk1.7.0_55
+export JAVA_HOME
+PATH=$JAVA_HOME/bin:$PATH
+export PATH
+CATALINA_HOME=/usr/share/apache-tomcat-7.0.53
+JAVA_OPTS="-Xms2048m -Xmx6000m -XX:MaxPermSize=2048m"
+export JAVA_OPTS
+
+case $1 in
+start)
+sh $CATALINA_HOME/bin/startup.sh
+;;
+stop)
+sh $CATALINA_HOME/bin/shutdown.sh
+;;
+restart)
+sh $CATALINA_HOME/bin/shutdown.sh
+sh $CATALINA_HOME/bin/startup.sh
+;;
+esac
+exit 0
+```

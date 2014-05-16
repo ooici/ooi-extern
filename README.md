@@ -1,7 +1,18 @@
 ooi-extern
 ==========
 
-## Using the service
+## Using the resync service
+
+### simple test
+
+start a container using something like the following `bin/pycc --rel res/deploy/r2deploy.yml -s test -fc`
+when you get to the command line do a `start_mx()`. you can also inlcude the flag to start it during container load.
+
+start the resync server `bin/ipython sync_init.py`
+
+then pass it a query something like `http://localhost:8848/syncharvesters=neptune,ioos&ooi=geonetwork`
+
+## Using the importer service
 
 in order for the coverage model to be loaded and used the [pyon.yml name](https://github.com/ooici/ion-definitions/blob/master/res/config/pyon.yml#L14)  needs to be set to `ion` other wise the data will not be loaded.
 

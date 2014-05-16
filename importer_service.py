@@ -213,7 +213,7 @@ class ResourceImporter():
                         if r_check.status_code == 200:
                             #Set the proper XML payload based on the type and configuration of the harvester
                             payload = self.configure_xml_harvester_add_xml(required_parameters, self.GEONETWORK_ICON)
-
+                            #print payload
                             # Check to ensure the XML payload returned properly
                             if payload is not False:
                                 headers = {'Content-Type': 'application/xml'}
@@ -221,12 +221,15 @@ class ResourceImporter():
                                                   data=payload,
                                                   headers=headers,
                                                   auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
-
+                                                                            
                                 if r.status_code == 200:
                                     output = str(r.text)
                                     start_response('200 ok', [('Content-Type', 'text/html')])
                                     #return ['<b>ALIVE & ADDED<BR>' + request + '<br>' + output + '</b>']
                                     return ['<b>ALIVE & ADDED<br>' + request + '</b></br>' + output]
+                                else:
+                                    self.logger.error("XML payload failed")
+                                    return ['<b>ERROR<br>' + request + '</b></br>' + output]
                             else:
                                 # XML payload configuration failed
                                 self.logger.error("XML payload configuration failed")

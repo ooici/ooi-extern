@@ -421,7 +421,7 @@ Change default database from H2 to PostgreSQL
   <role rolename="manager-script"/>
   <role rolename="manager-jmx"/>
   <role rolename="manager-status"/>
-  <user username="admin" password="ooici" roles="tomcat,role1,manager-gui,manager-status"/>
+  <user username="admin" password="*****" roles="tomcat,role1,manager-gui,manager-status"/>
 </tomcat-users>
 ```
 
@@ -438,7 +438,7 @@ as follows: and ensure the default H2 resource is set to "false" (only one resou
                         <provider>jeeves.resources.dbms.ApacheDBCPool</provider>
                         <config>
                                 <user>ooici</user>
-                                <password>ooici</password>
+                                <password>*****</password>
                                 <!-- we use org.postgis.DriverWrapper in place of
                                 org.postgresql.Driver to support both postgresql and postgis -->
                                 <driver>org.postgis.DriverWrapper</driver>

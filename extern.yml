@@ -46,3 +46,6 @@ eoi:
         icon: OOI_LogoBlack.png
         user_name: admin
         password: admin
+        options_every: '0 0 0 ? * *'
+        options_onerunonly: false
+        options_status: inactive

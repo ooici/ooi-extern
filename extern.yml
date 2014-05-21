@@ -11,13 +11,13 @@ eoi:
         geoserver_ooi_store: ooi
         geoserver_ooi_workspace: geonode
         user_name: admin
-        password: admin
+        password:
         layer_prefix: ooi_
         layer_suffix: _ooi
 #postgres DB storing the FDT        
     postgres:
         host: localhost
-        user_name: rpsdev
+        user_name: postgres
         password: 
         database: postgres
         port: 5432
@@ -32,6 +32,12 @@ eoi:
         add_layer: addlayer
         remove_layer: removelayer
         reset_store: resetstore
+#resyc service for GeoNetwork
+    resync_service:
+        server: http://localhost
+        port: 8848
+        sgs_url: http://localhost:5000/ion-service
+        harvester_list: ["neptune", "ioos", "ioos2"]
 #neptune sos handler service        
     neptune_sos_handler:
         server: http://localhost
@@ -42,10 +48,15 @@ eoi:
         create_fdw:
 #geonetwork connection settings
     geonetwork:
-        base_url: http://eoi-dev1.oceanobservatories.org:8080/geonetwork/srv/eng/
+        base_url: http://localhost:8080/geonetwork/srv/eng/
         icon: OOI_LogoBlack.png
         user_name: admin
-        password: admin
+        password:
         options_every: '0 0 0 ? * *'
         options_onerunonly: false
         options_status: inactive
+        database_server: localhost
+        database_port: 5432
+        database_user: postgres
+        database_password:
+        database_name: geonetwork

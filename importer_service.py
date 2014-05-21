@@ -44,7 +44,7 @@ KEY_NAME = 'name'
 KEY_ID = 'id'
 PARAMS = 'params'
 
-#load yaml details
+
 class ResourceImporter():
     def __init__(self):
         logger = logging.getLogger('importer_service')
@@ -117,7 +117,7 @@ class ResourceImporter():
                 if param_dict.has_key(KEY_SERVICE):
                     if param_dict[KEY_SERVICE] == ALIVE:
                         start_response('200 ok', [('Content-Type', 'text/html')])
-                        return ['<b>ALIVE<BR>' + request + '<br>' + output + '</b>']
+                        return ['<b>IMPORTER SERVICE IS ALIVE<BR>' + request + '<br>' + output + '</b>']
                     elif param_dict[KEY_SERVICE] == ADDLAYER:
                         if param_dict.has_key(KEY_NAME) and param_dict.has_key(KEY_ID):
                             if param_dict.has_key(PARAMS):

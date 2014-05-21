@@ -6,12 +6,10 @@ from gevent.pywsgi import WSGIServer
 import httplib2
 import json
 import requests
-from bs4 import *
-import ast
+from BeautifulSoup import *
 import yaml
 import logging
 import psycopg2
-import time
 import simplejson as json
 import numpy as np
 
@@ -23,7 +21,13 @@ __author__ = "abird"
 # Content headers
 headers = {'content-type': 'application/xml'}
 
-sync_harvesters = "syncharvesters"
+SYNC_HARVESTERS = "syncharvesters"
+ALIVE = "alive"
+
+KEY_SERVICE = 'service'
+KEY_NAME = 'name'
+KEY_ID = 'id'
+PARAMS = 'params'
 
 
 class DataProductImporter():
@@ -44,15 +48,18 @@ class DataProductImporter():
         ion_config = yaml.load(stream)
         self.logger.info("opened yml file")
 
-        ##TODO add to yml file
-        self.GEONETWORK_SERVER = "http://r3-pg-test02.oceanobservatories.org:8080"
-        self.GEONETWORK_DB_SERVER = "r3-pg-test02.oceanobservatories.org"
-        self.GEONETWORK_DB = "geonetwork"
-        self.RR_PORT = 8848
-        self.GEONETWORK_USER = 'ooici'
-        self.GEONETWORK_PASS= 'ooici'
+        self.RR_PORT = ion_config['eoi']['resync_service']['port']
+        self.SGS_URL = self.url = ion_config['eoi']['resync_service']['sgs_url']
+        self.HARVESTER_LIST = self.url = ion_config['eoi']['resync_service']['harvester_list']
 
-        self.SGS_URL = self.url = 'http://%s:%s/ion-service/' % ('localhost', 5000)
+        self.GEONETWORK_BASE_URL = ion_config['eoi']['geonetwork']['base_url']
+        self.GEONETWORK_USER = ion_config['eoi']['geonetwork']['user_name']
+        self.GEONETWORK_PASS = ion_config['eoi']['geonetwork']['password']
+
+        self.GEONETWORK_DB_SERVER = ion_config['eoi']['geonetwork']['database_server']
+        self.GEONETWORK_DB_NAME = ion_config['eoi']['geonetwork']['database_name']
+        self.GEONETWORK_DB_USER = ion_config['eoi']['geonetwork']['database_user']
+        self.GEONETWORK_DB_PASS = ion_config['eoi']['geonetwork']['database_password']
 
         self.logger.info('Serving on '+str(self.RR_PORT)+'...')
         server = WSGIServer(('', self.RR_PORT), self.application).serve_forever()
@@ -72,18 +79,21 @@ class DataProductImporter():
                     params = param.split("=")
                     param_dict[params[0]] = params[1]
 
-                if param_dict.has_key(sync_harvesters) and param_dict.has_key("ooi"):
-                    try:
-                        print "requested sync harvesters:",param_dict[sync_harvesters]
-                        site_dict = self.get_harvester_list()
-                        #self.get_all_available_meta_data_records(site_dict)
-                        self.get_meta_data_records_for_harvester(site_dict)
-
+                if param_dict.has_key(KEY_SERVICE):
+                    if param_dict[KEY_SERVICE] == ALIVE:
                         start_response('200 ok', [('Content-Type', 'text/html')])
-                        return ['<b>ALIVE<BR>' + request + '</b>']
-                    except Exception, e:
-                        start_response('400 Bad Request', [('Content-Type', 'text/html')])
-                        return ['<b>ERROR IN HARVESTER, CHECK CONNECTION<BR>' + request + '<br>' + output + '</b>']
+                        return ['<b>RESYNC SERVICE IS ALIVE<BR>' + request + '<br>' + output + '</b>']
+                    elif param_dict[KEY_SERVICE] == SYNC_HARVESTERS:
+                        try:
+                            print "requested sync harvesters:",param_dict[SYNC_HARVESTERS]
+                            site_dict = self.get_harvester_list()
+                            self.get_meta_data_records_for_harvester(site_dict)
+
+                            start_response('200 ok', [('Content-Type', 'text/html')])
+                            return ['<b>ALIVE<BR>' + request + '</b>']
+                        except Exception, e:
+                            start_response('400 Bad Request', [('Content-Type', 'text/html')])
+                            return ['<b>ERROR IN HARVESTER, CHECK CONNECTION<BR>' + request + '<br>' + output + '</b>']
                 else:
                     start_response('400 Bad Request', [('Content-Type', 'text/html')])
                     return ['<b>ERROR IN PARAMS<BR>' + request + '<br>' + output + '</b>']
@@ -95,14 +105,14 @@ class DataProductImporter():
         """
         Creates a dict of valid harvester names and id's using GeoNetwork's XML REST service
         """
-        r = requests.get(self.GEONETWORK_SERVER+'/geonetwork/srv/eng/harvesting/xml.harvesting.get', auth=("admin", "admin"), headers=headers)
+        r = requests.get(self.GEONETWORK_BASE_URL+'/geonetwork/srv/eng/harvesting/xml.harvesting.get', auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS), headers=headers)
         r.status_code
         soup = BeautifulSoup(r.text)
         sites = soup.find_all("site")
         site_dict = dict()
 
-        accept_list = ["neptune", "ioos", "ioos2"]
-
+        #accept_list = ["neptune", "ioos", "ioos2"]
+        accept_list = self.HARVESTER_LIST
         for site in sites:
             name = site.find("name").text
             if name in accept_list:
@@ -116,7 +126,7 @@ class DataProductImporter():
         """
         records = []
         try:
-            conn = psycopg2.connect(database=self.GEONETWORK_DB, user=self.GEONETWORK_USER, password=self.GEONETWORK_PASS, host=self.GEONETWORK_DB_SERVER)
+            conn = psycopg2.connect(database=self.GEONETWORK_DB_NAME, user=self.GEONETWORK_DB_USER, password=self.GEONETWORK_DB_PASS, host=self.GEONETWORK_DB_SERVER)
             cursor = conn.cursor()
             # execute our Query
             for site_uuid in site_dict.keys():
@@ -177,14 +187,14 @@ class DataProductImporter():
                         self.request_resource_action('resource_registry', 'delete', object_id=rec_rruuid)
 
                         # Delete from metadataregistry
-                        delete_values = ('rruuid': rec_rruuid)
+                        delete_values = {'rruuid': rec_rruuid}
                         delete_stmt = "DELETE FROM metadataregistry WHERE rruuid='%(rruuid)s'" % delete_values
                         cursor.execute(delete_stmt)
         except Exception, e:
             print e, ": I am unable to connect to the database..."
 
     def get_metadata_payload(self, uuid):
-        conn = psycopg2.connect(database=self.GEONETWORK_DB, user=self.GEONETWORK_USER, password=self.GEONETWORK_PASS, host=self.GEONETWORK_DB_SERVER)
+        conn = psycopg2.connect(database=self.GEONETWORK_DB_NAME, user=self.GEONETWORK_DB_USER, password=self.GEONETWORK_DB_PASS, host=self.GEONETWORK_DB_SERVER)
         cursor = conn.cursor()
         get_values = {'uuid': uuid}
         cursor.execute("SELECT m.data FROM metadata m WHERE m.uuid='%(uuid)s'") % get_values
@@ -255,6 +265,7 @@ class Serializer:
     """
 
     def __init__(self):
+        pass
 
     @classmethod
     def encode(cls, message):

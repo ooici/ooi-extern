@@ -37,7 +37,7 @@ eoi:
         server: http://localhost
         port: 8848
         sgs_url: http://localhost:5000/ion-service
-        harvester_list: ["neptune", "ioos", "ioos2"]
+        harvester_list: ["neptune", "ioos"]
 #neptune sos handler service        
     neptune_sos_handler:
         server: http://localhost

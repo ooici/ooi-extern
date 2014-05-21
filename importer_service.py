@@ -44,7 +44,7 @@ KEY_NAME = 'name'
 KEY_ID = 'id'
 PARAMS = 'params'
 
-#load yaml details
+
 class ResourceImporter():
     def __init__(self):
         logger = logging.getLogger('importer_service')
@@ -87,6 +87,9 @@ class ResourceImporter():
         self.GEONETWORK_USER = ion_config['eoi']['geonetwork']['user_name']
         self.GEONETWORK_PASS = ion_config['eoi']['geonetwork']['password']
         self.GEONETWORK_ICON = ion_config['eoi']['geonetwork']['icon']
+        self.GEONETWORK_OPTIONS_EVERY = ion_config['eoi']['geonetwork']['options_every']
+        self.GEONETWORK_OPTIONS_ONERUNONLY = ion_config['eoi']['geonetwork']['options_onerunonly']
+        self.GEONETWORK_OPTIONS_STATUS = ion_config['eoi']['geonetwork']['options_status']
 
         self.logger.info("parsed attributes")
 
@@ -114,7 +117,7 @@ class ResourceImporter():
                 if param_dict.has_key(KEY_SERVICE):
                     if param_dict[KEY_SERVICE] == ALIVE:
                         start_response('200 ok', [('Content-Type', 'text/html')])
-                        return ['<b>ALIVE<BR>' + request + '<br>' + output + '</b>']
+                        return ['<b>IMPORTER SERVICE IS ALIVE<BR>' + request + '<br>' + output + '</b>']
                     elif param_dict[KEY_SERVICE] == ADDLAYER:
                         if param_dict.has_key(KEY_NAME) and param_dict.has_key(KEY_ID):
                             if param_dict.has_key(PARAMS):
@@ -212,8 +215,8 @@ class ResourceImporter():
                         # if r_check.status_code == 200 and None not in required_parameters.values():
                         if r_check.status_code == 200:
                             #Set the proper XML payload based on the type and configuration of the harvester
-                            payload = self.configure_xml_harvester_add_xml(required_parameters, self.GEONETWORK_ICON)
-                            #print payload
+                            payload = self.configure_xml_harvester_add_xml(required_parameters, self.GEONETWORK_ICON, self.GEONETWORK_OPTIONS_EVERY, self.GEONETWORK_OPTIONS_ONERUNONLY, self.GEONETWORK_OPTIONS_STATUS)
+
                             # Check to ensure the XML payload returned properly
                             if payload is not False:
                                 headers = {'Content-Type': 'application/xml'}
@@ -261,7 +264,7 @@ class ResourceImporter():
                             for hkey in harvesters.keys():
                                 payload += '''<id>%s</id>''' % hkey
                             payload += '''</request>'''
-                            #print payload
+
                             # Send the POST to start the harvester scheduler
                             headers = {'Content-Type': 'application/xml'}
                             r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.remove',
@@ -304,7 +307,7 @@ class ResourceImporter():
                             for hkey in harvesters.keys():
                                 payload += '''<id>%s</id>''' % hkey
                             payload += '''</request>'''
-                            #print payload
+
                             # Send the POST to start the harvester scheduler
                             headers = {'Content-Type': 'application/xml'}
                             r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.start',
@@ -347,7 +350,7 @@ class ResourceImporter():
                             for hkey in harvesters.keys():
                                 payload += '''<id>%s</id>''' % hkey
                             payload += '''</request>'''
-                            #print payload
+
                             # Send the POST to start the harvester scheduler
                             headers = {'Content-Type': 'application/xml'}
                             r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.stop',
@@ -390,7 +393,7 @@ class ResourceImporter():
                             for hkey in harvesters.keys():
                                 payload += '''<id>%s</id>''' % hkey
                             payload += '''</request>'''
-                            #print payload
+
                             # Send the POST to run a harvester on-demand
                             headers = {'Content-Type': 'application/xml'}
                             r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.run',
@@ -696,7 +699,7 @@ class ResourceImporter():
 
         return attribute
 
-    def configure_xml_harvester_add_xml(self, required_parameters, icon):
+    def configure_xml_harvester_add_xml(self, required_parameters, icon, options_every, options_onerunonly, options_status):
         # Validate required_parameters values
         valid_parameters = True
 
@@ -738,6 +741,9 @@ class ResourceImporter():
         other_parameters['searches'] = searches
         other_parameters['icon'] = icon
         other_parameters['baseurl'] = required_parameters['protocoltype']
+        other_parameters['options_every'] = options_every
+        other_parameters['options_onerunonly'] = options_onerunonly
+        other_parameters['options_status'] = options_status
 
         xmldata = required_parameters.copy()
         xmldata.update(other_parameters)
@@ -769,9 +775,9 @@ class ResourceImporter():
                         <importxslt>%(importxslt)s</importxslt>
                     </content>
                     <options>
-                        <every>0 0 0 ? * *</every>
-                        <oneRunOnly>true</oneRunOnly>
-                        <status>inactive</status>
+                        <every>%(options_every)s</every>
+                        <oneRunOnly>%(options_onerunonly)s</oneRunOnly>
+                        <status>%(options_status)s</status>
                     </options>
                     <searches>
                         %(searches)s
@@ -787,7 +793,6 @@ class ResourceImporter():
                         <category id="2" />
                     </categories>
                 </node>''' % xmldata
-                #print xml
                 return xml
             elif required_parameters['harvestertype'] == 'ogcwxs':
                 xml = '''<?xml version='1.0' encoding='utf-8'?>
@@ -816,9 +821,9 @@ class ResourceImporter():
                         <importxslt>none</importxslt>
                     </content>
                     <options>
-                        <every>0 0 17 ? * *</every>
-                        <oneRunOnly>false</oneRunOnly>
-                        <status>inactive</status>
+                        <every>%(options_every)s</every>
+                        <oneRunOnly>%(options_onerunonly)s</oneRunOnly>
+                        <status>%(options_status)s</status>
                         <lang>eng</lang>
                         <topic>oceans</topic>
                         <createThumbnails>true</createThumbnails>
@@ -832,7 +837,6 @@ class ResourceImporter():
                     </categories>
                     <info/>
                 </node>''' % xmldata
-                #print xml
                 return xml
             else:
                 return False

@@ -61,7 +61,7 @@ class DataProductImporter():
         self.GEONETWORK_DB_USER = ion_config['eoi']['geonetwork']['database_user']
         self.GEONETWORK_DB_PASS = ion_config['eoi']['geonetwork']['database_password']
 
-        self.EXTERNAL_CATEGORY = 0
+        self.EXTERNAL_CATEGORY = 3
 
         self.logger.info('Serving on '+str(self.RR_PORT)+'...')
         server = WSGIServer(('', self.RR_PORT), self.application).serve_forever()
@@ -121,6 +121,7 @@ class DataProductImporter():
                     uuid = site.find("uuid").text
                     site_dict[uuid] = name
             return site_dict
+
         except Exception, e:
             self.logger.info("accessing error: "+str(e))
 
@@ -168,7 +169,7 @@ class DataProductImporter():
                         #add the data to the RR
                         if rec_rruuid == None:
                             # The metadata record is new                            
-                            gwresponse = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,"name": rec_name, "description": rec_descrip, "type_": "ExternalDataset"})
+                            gwresponse = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,"name": rec_name, "description": rec_descrip, "type_": "DataProduct"})
                             self.logger.info("new meta data record:"+str(gwresponse))
                             if gwresponse is None:
                                 self.logger.info("resource record was not created in SGS:"+str(gwresponse))
@@ -187,7 +188,7 @@ class DataProductImporter():
                             self.request_resource_action('resource_registry', 'delete', object_id=rec_rruuid)
 
                             # Create new resource in the RR
-                            gwresponse = rruuid = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,"name": rec_name, "description": rec_descrip, "type_": "ExternalDataset"})
+                            gwresponse = rruuid = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,"name": rec_name, "description": rec_descrip, "type_": "DataProduct"})
                             rruuid = gwresponse[0]
 
                             # UPDATE metadataregistry table record with updated registerdate and rruuid

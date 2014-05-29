@@ -152,7 +152,7 @@ class ResourceImporter():
                     #
                     # Obtain list of current harvesters, i.e. is the service ALIVE?
                     elif param_dict[KEY_SERVICE] == REQUEST_HARVESTER:
-                        r = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get', auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+                        r = requests.get(self.GEONETWORK_BASE_URL + '/xml.harvesting.get', auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
 
                         if r.status_code == 200:
                             nodes = self.get_geonetwork_nodes(r.text)
@@ -173,8 +173,7 @@ class ResourceImporter():
                         # TODO: If it does, make sure to update with new params by DROP/ADD method
 
                         # Make sure the service is ALIVE
-                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
-                                               auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+                        r_check = requests.get(self.GEONETWORK_BASE_URL + '/xml.harvesting.get', auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
 
                         required_parameters = {
                             'id': None,                         # id=6a9e7082c36b4facb915e36488376328
@@ -206,10 +205,12 @@ class ResourceImporter():
                                                                 # tscreated=1399467966285&
                                                                 # altids=['PRE:EDSID3']&
 
+                        missing_params = []
                         for required_parameter in required_parameters:
                             if required_parameter in param_dict:
                                 required_parameters[required_parameter] = param_dict[required_parameter]
                             else:
+                                missing_params.append(required_parameter)
                                 self.logger.warn('Parameter %s is missing.' % required_parameter)
 
                         # if r_check.status_code == 200 and None not in required_parameters.values():
@@ -220,7 +221,7 @@ class ResourceImporter():
                             # Check to ensure the XML payload returned properly
                             if payload is not False:
                                 headers = {'Content-Type': 'application/xml'}
-                                r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.add',
+                                r = requests.post(self.GEONETWORK_BASE_URL + '/xml.harvesting.add',
                                                   data=payload,
                                                   headers=headers,
                                                   auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
@@ -241,12 +242,18 @@ class ResourceImporter():
                             response_str = '<b>ERROR: %s Creating Harvester</b></br>' % r_check.status_code
                             for p in required_parameters:
                                 response_str += '%s </br>' % p
+
+                            #add the missing params
+                            response_str += "<b> Missing Params</b>"
+                            for p in missing_params:
+                                response_str += '%s </br>' % p
+ 
                             return [response_str]
 
                     # Remove ALL harvesters associated with external observatories
                     elif param_dict[KEY_SERVICE] == REMOVE_HARVESTER:
                         # Make sure the service is ALIVE
-                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
+                        r_check = requests.get(self.GEONETWORK_BASE_URL + '/xml.harvesting.get',
                                                auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
 
                         # Check that the harvester filter (hfilter) is set in the URL parameters
@@ -267,7 +274,7 @@ class ResourceImporter():
 
                             # Send the POST to start the harvester scheduler
                             headers = {'Content-Type': 'application/xml'}
-                            r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.remove',
+                            r = requests.post(self.GEONETWORK_BASE_URL + '/xml.harvesting.remove',
                                               data=payload,
                                               headers=headers,
                                               auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
@@ -289,7 +296,7 @@ class ResourceImporter():
                     # Start automated harvester based on defined scheduled time
                     elif param_dict[KEY_SERVICE] == START_HARVESTER:
                         # Make sure the service is ALIVE
-                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
+                        r_check = requests.get(self.GEONETWORK_BASE_URL + '/xml.harvesting.get',
                                                auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
 
                         # Check that the harvester filter (hfilter) is set in the URL parameters
@@ -310,7 +317,7 @@ class ResourceImporter():
 
                             # Send the POST to start the harvester scheduler
                             headers = {'Content-Type': 'application/xml'}
-                            r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.start',
+                            r = requests.post(self.GEONETWORK_BASE_URL + '/xml.harvesting.start',
                                               data=payload,
                                               headers=headers,
                                               auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
@@ -332,7 +339,7 @@ class ResourceImporter():
                     # Stop harvester
                     elif param_dict[KEY_SERVICE] == STOP_HARVESTER:
                         # Make sure the service is ALIVE
-                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
+                        r_check = requests.get(self.GEONETWORK_BASE_URL + '/xml.harvesting.get',
                                                auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
 
                         # Check that the harvester filter (hfilter) is set in the URL parameters
@@ -353,7 +360,7 @@ class ResourceImporter():
 
                             # Send the POST to start the harvester scheduler
                             headers = {'Content-Type': 'application/xml'}
-                            r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.stop',
+                            r = requests.post(self.GEONETWORK_BASE_URL + '/xml.harvesting.stop',
                                               data=payload,
                                               headers=headers,
                                               auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
@@ -375,7 +382,7 @@ class ResourceImporter():
                     # Run harvester on-demand)
                     elif param_dict[KEY_SERVICE] == RUN_HARVESTER:
                         # Make sure the service is ALIVE
-                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
+                        r_check = requests.get(self.GEONETWORK_BASE_URL + '/xml.harvesting.get',
                                                auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
 
                         # Check that the harvester filter (hfilter) is set in the URL parameters
@@ -396,7 +403,7 @@ class ResourceImporter():
 
                             # Send the POST to run a harvester on-demand
                             headers = {'Content-Type': 'application/xml'}
-                            r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.run',
+                            r = requests.post(self.GEONETWORK_BASE_URL + '/xml.harvesting.run',
                                               data=payload,
                                               headers=headers,
                                               auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
@@ -421,7 +428,7 @@ class ResourceImporter():
     def get_harvesters(self, harvester_filter=None):
         harvesters = {}
         try:
-            r = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get', auth=('admin', 'admin'))
+            r = requests.get(self.GEONETWORK_BASE_URL + '/xml.harvesting.get', auth=('admin', 'admin'))
             if r.status_code == 200:
                 soup = BeautifulSoup(r.text)
                 nodes = soup.findAll('node')

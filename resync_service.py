@@ -110,15 +110,14 @@ class DataProductImporter():
         site_dict = dict()
         try:    
             self.logger.info("accessing: "+self.GEONETWORK_BASE_URL)
-            r = requests.get(self.GEONETWORK_BASE_URL+'/geonetwork/srv/eng/harvesting/xml.harvesting.get', auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS), headers=headers)                        
+            r = requests.get(self.GEONETWORK_BASE_URL+'xml.harvesting.get', auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS), headers=headers)                        
             soup = BeautifulSoup(r.text)            
             site_list = soup.find_all("site")            
-            accept_list = self.HARVESTER_LIST
+            #accept_list = self.HARVESTER_LIST #removed as ioos names will be added via the catalog
             for site in site_list:
-                name = site.find("name").text
-                if name in accept_list:
-                    uuid = site.find("uuid").text
-                    site_dict[uuid] = name
+                name = site.find("name").text               
+                uuid = site.find("uuid").text
+                site_dict[uuid] = name
             return site_dict
 
         except Exception, e:

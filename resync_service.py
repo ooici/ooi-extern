@@ -112,9 +112,8 @@ class DataProductImporter():
             self.logger.info("accessing: "+self.GEONETWORK_BASE_URL)
             r = requests.get(self.GEONETWORK_BASE_URL+'/geonetwork/srv/eng/harvesting/xml.harvesting.get', auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS), headers=headers)                        
             soup = BeautifulSoup(r.text)            
-            site_list = soup.find_all("site")
-            accept_list = ["neptune","ioos"]
-            #accept_list = self.HARVESTER_LIST
+            site_list = soup.find_all("site")            
+            accept_list = self.HARVESTER_LIST
             for site in site_list:
                 name = site.find("name").text
                 if name in accept_list:
@@ -148,9 +147,10 @@ class DataProductImporter():
                     #get the identification information for the place             
                     rec_name = uuid
                     rec_descrip = ""
-                    try:                    
-                        rec_name = self.get_name_info(soup)
-                        rec_descrip = self.get_ident_info(soup)                       
+                    try: 
+                        #fix names if they contain invalid characters                   
+                        rec_name = self.get_name_info(soup).replace('\\r\\n',"").rstrip()
+                        rec_descrip = self.get_ident_info(soup).replace('\\r\\n',"").rstrip()
                         #self.getkeywords(soup)
                         #self.getgeoextent(soup)
                         #dt = self.get_temporal_extent(soup)
@@ -165,11 +165,19 @@ class DataProductImporter():
                     #rec_registerdate = rec[3]
                     rec_rruuid = rec[4]
                     rec_mchanged = rec[5]
+
+                    ref_url = self.get_reference_url(site_dict,site_uuid,uuid)
+
                     try:                       
                         #add the data to the RR
                         if rec_rruuid == None:
                             # The metadata record is new                            
-                            gwresponse = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,"name": rec_name, "description": rec_descrip, "type_": "DataProduct"})
+                            gwresponse = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,
+                                                                                                                "name": rec_name, 
+                                                                                                                "description": rec_descrip, 
+                                                                                                                "type_": "DataProduct",
+                                                                                                                "reference_urls":[ref_url]
+                                                                                                            })
                             self.logger.info("new meta data record:"+str(gwresponse))
                             if gwresponse is None:
                                 self.logger.info("resource record was not created in SGS:"+str(gwresponse))
@@ -188,7 +196,12 @@ class DataProductImporter():
                             self.request_resource_action('resource_registry', 'delete', object_id=rec_rruuid)
 
                             # Create new resource in the RR
-                            gwresponse = rruuid = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,"name": rec_name, "description": rec_descrip, "type_": "DataProduct"})
+                            gwresponse = rruuid = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,
+                                                                                                                        "name": rec_name, 
+                                                                                                                        "description": rec_descrip, 
+                                                                                                                        "type_": "DataProduct",
+                                                                                                                        "reference_urls":[ref_url]
+                                                                                                                    })
                             rruuid = gwresponse[0]
 
                             # UPDATE metadataregistry table record with updated registerdate and rruuid
@@ -209,6 +222,19 @@ class DataProductImporter():
                                         
         except Exception, e:
             self.logger.info(str(e)+ ": I am unable to connect to the database...")
+
+    def get_reference_url(self,site_dict,site_uuid,uuid):
+        ref_url = ""
+        if site_dict[site_uuid] == "neptune":
+            temp_device_id =11206
+            ref_url = "http://dmas.uvic.ca/DeviceListing?DeviceId="+str(temp_device_id)
+        else:
+            ref_url ="http://r3-pg-test02.oceanobservatories.org:8080/geonetwork/srv/eng/main.home?uuid="+str(uuid)    
+            self.logger.info("uuid:"+ref_url)
+
+        self.logger.info("uuid:"+str(uuid)) 
+
+        return ref_url  
 
     def get_metadata_payload(self, uuid):
         try: 
@@ -262,10 +288,10 @@ class DataProductImporter():
     def get_ident_info(self, soup):
         indent_info = soup.find("gmd:identificationinfo")
         title = indent_info.find("gmd:title").text.rstrip()
-        alt_title = indent_info.find("gmd:alternatetitle").text.replace("\n", "")
-        iden = indent_info.find("gmd:identifier").text.replace("\n", "")
-        org_name = indent_info.find("gmd:organisationname").text.replace("\n", "")
-        poc = indent_info.find("gmd:pointofcontact")
+        #alt_title = indent_info.find("gmd:alternatetitle").text.replace("\n", "")
+        #iden = indent_info.find("gmd:identifier").text.replace("\n", "")
+        #org_name = indent_info.find("gmd:organisationname").text.replace("\n", "")
+        #poc = indent_info.find("gmd:pointofcontact")
         return title
 
     def getkeywords(self, soup):

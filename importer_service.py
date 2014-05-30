@@ -21,6 +21,17 @@ import ast
 import yaml
 import logging
 
+#added imports for csw parsing
+from datetime import datetime
+from urlparse import urlparse
+
+import requests
+import xml.etree.ElementTree as ET
+
+from owslib import fes, csw
+from owslib.util import nspath_eval
+from owslib.namespaces import Namespaces
+
 __author__ = "abird"
 
 # GeoServer
@@ -173,8 +184,7 @@ class ResourceImporter():
                         # TODO: If it does, make sure to update with new params by DROP/ADD method
 
                         # Make sure the service is ALIVE
-                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get',
-                                               auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+                        r_check = requests.get(self.GEONETWORK_BASE_URL + 'xml.harvesting.get', auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
 
                         required_parameters = {
                             'id': None,                         # id=6a9e7082c36b4facb915e36488376328
@@ -206,42 +216,36 @@ class ResourceImporter():
                                                                 # tscreated=1399467966285&
                                                                 # altids=['PRE:EDSID3']&
 
+
+                        ndbc_ioos = "ndbc_ioos"
+                        missing_params = []
                         for required_parameter in required_parameters:
                             if required_parameter in param_dict:
-                                required_parameters[required_parameter] = param_dict[required_parameter]
+                                required_parameters[required_parameter] = param_dict[required_parameter]                                
                             else:
+                                missing_params.append(required_parameter)
                                 self.logger.warn('Parameter %s is missing.' % required_parameter)
 
-                        # if r_check.status_code == 200 and None not in required_parameters.values():
-                        if r_check.status_code == 200:
-                            #Set the proper XML payload based on the type and configuration of the harvester
-                            payload = self.configure_xml_harvester_add_xml(required_parameters, self.GEONETWORK_ICON, self.GEONETWORK_OPTIONS_EVERY, self.GEONETWORK_OPTIONS_ONERUNONLY, self.GEONETWORK_OPTIONS_STATUS)
 
-                            # Check to ensure the XML payload returned properly
-                            if payload is not False:
-                                headers = {'Content-Type': 'application/xml'}
-                                r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.add',
-                                                  data=payload,
-                                                  headers=headers,
-                                                  auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
-                                                                            
-                                if r.status_code == 200:
-                                    output = str(r.text)
-                                    start_response('200 ok', [('Content-Type', 'text/html')])
-                                    #return ['<b>ALIVE & ADDED<BR>' + request + '<br>' + output + '</b>']
-                                    return ['<b>ALIVE & ADDED<br>' + request + '</b></br>' + output]
-                                else:
-                                    self.logger.error("XML payload failed")
-                                    return ['<b>ERROR<br>' + request + '</b></br>' + output]
+                        #very special case for when we need to process the link and get the links from ngdc csw catalog                        
+                        #override and set defauly sos params
+                        try:
+                            if param_dict["name"] == ndbc_ioos:                                
+                                #get data urls
+                                ret = self.get_data_urls_for_ioos(r_check,request,required_parameters,start_response,output)                                 
                             else:
-                                # XML payload configuration failed
-                                self.logger.error("XML payload configuration failed")
-                        else:
-                            start_response(str(r_check.status_code), [('Content-Type', 'text/html')])
-                            response_str = '<b>ERROR: %s Creating Harvester</b></br>' % r_check.status_code
-                            for p in required_parameters:
-                                response_str += '%s </br>' % p
-                            return [response_str]
+                                ret = self.generate_harvester(r_check,request,required_parameters,start_response,output)
+                                if (len(ret))>1 :                               
+                                    start_response = ret[1]
+                                else:
+                                    self.logger.error(ret[0])    
+                                    return [ret[0]] 
+                        except Exception, e:
+                            self.logger.error(str(e))
+                            return [str(e)]
+
+                        return [ret[0]]    
+
 
                     # Remove ALL harvesters associated with external observatories
                     elif param_dict[KEY_SERVICE] == REMOVE_HARVESTER:
@@ -417,6 +421,117 @@ class ResourceImporter():
 
         start_response('200 OK', [('Content-Type', 'text/html')])
         return ['<b>' + request + '<br>' + output + '</b>']
+
+    def get_data_urls_for_ioos(self,r_check,request,required_parameters,start_response,output):
+
+        region_map =    {'AOOS'             : '1706F520-2647-4A33-B7BF-592FAFDE4B45',
+                 'ATN_DAC'          : '07875897-E6A6-4EDB-B111-F5D6BE841ED6',
+                 'CARICOOS'         : '117F1684-A5E3-400E-98D8-A270BDBA1603',
+                 'CENCOOS'          : '4BA5624D-A61F-4C7E-BAEE-7F8BDDB8D9C4',
+                 'GCOOS'            : '003747E7-4818-43CD-937D-44D5B8E2F4E9',                 
+                 'GLOS'             : 'B664427E-6953-4517-A874-78DDBBD3893E',
+                 'MARACOOS'         : 'C664F631-6E53-4108-B8DD-EFADF558E408',            
+                 'NANOOS'           : '254CCFC0-E408-4E13-BD62-87567E7586BB',
+                 'NERACOOS'         : 'E41F4FCD-0297-415D-AC53-967B970C3A3E',
+                 'PacIOOS'          : '68FF11D8-D66B-45EE-B33A-21919BB26421',
+                 'SCCOOS'           : 'B70B3E3C-3851-4BA9-8E9B-C9F195DCEAC7',
+                 'SECOORA'          : 'B3EA8869-B726-4E39-898A-299E53ABBC98'}
+
+        services =      {'SOS'              : 'urn:x-esri:specification:ServiceType:sos:url'}
+
+        endpoint = 'http://www.ngdc.noaa.gov/geoportal/csw' # NGDC Geoportal
+
+
+        filter_regions=None
+        filter_service_types=None
+
+        c = csw.CatalogueServiceWeb(endpoint, timeout=120)
+
+        ns = Namespaces()
+
+        filter_regions = filter_regions or region_map.keys()
+        filter_service_types = filter_service_types or services.keys()
+
+        total = 0
+        for region,uuid in region_map.iteritems():
+            if region not in filter_regions:
+                print ("Skipping region %s due to filter", region)
+                continue
+
+            self.logger.error("NGDC: Requesting region %s", region)
+            
+            # Setup uuid filter
+            uuid_filter = fes.PropertyIsEqualTo(propertyname='sys.siteuuid', literal="{%s}" % uuid)
+            # Make CSW request
+            c.getrecords2([uuid_filter], esn='full', maxrecords=999999)
+            for name, record in c.records.iteritems():
+                try:
+                    #if its an sos end point fix the required params          
+                    required_parameters["harvestertype"]="ogcwxs"
+                    required_parameters["importxslt"]=""
+                    required_parameters["ogctype"]="SOS1.0.0"
+                    required_parameters["datasourcetype"]="sos"
+
+                    contact_email = ""
+                    metadata_url = None
+                        
+                    for ref in record.references:                    
+                        # We are only interested in the 'services'
+                        if ref["scheme"] in services.values():
+                            url = unicode(ref["url"])                            
+                            url = url.replace("?service=SOS&version=1.0.0&request=GetCapabilities","")
+                            required_parameters["protocoltype"] = url
+                            required_parameters["name"] = region
+                            ## generate entry via the harvester service
+                            ret = self.generate_harvester(r_check,request,required_parameters,start_response,output)
+                            if (len(ret))>1: 
+                                total+=1
+                                self.logger.error(ret[1])
+                            else:
+                                self.logger.error(ret[0])                                        
+                        
+                except Exception as e:
+                        self.logger.error("Could not get region info: %s", e)        
+
+        return '<b>created NGDC enteries</b>'+str(total)
+
+    def generate_harvester(self,r_check,request,required_parameters,start_response,output):
+        # if r_check.status_code == 200 and None not in required_parameters.values():
+        if r_check.status_code == 200:
+            #Set the proper XML payload based on the type and configuration of the harvester
+            payload = self.configure_xml_harvester_add_xml(required_parameters, self.GEONETWORK_ICON, self.GEONETWORK_OPTIONS_EVERY, self.GEONETWORK_OPTIONS_ONERUNONLY, self.GEONETWORK_OPTIONS_STATUS)
+
+            # Check to ensure the XML payload returned properly
+            if payload is not False:
+                headers = {'Content-Type': 'application/xml'}
+                r = requests.post(self.GEONETWORK_BASE_URL + 'xml.harvesting.add',
+                                  data=payload,
+                                  headers=headers,
+                                  auth=(self.GEONETWORK_USER, self.GEONETWORK_PASS))
+                                                            
+                if r.status_code == 200:
+                    output = str(r.text)
+                    start_response('200 ok', [('Content-Type', 'text/html')])
+                    #return ['<b>ALIVE & ADDED<BR>' + request + '<br>' + output + '</b>']
+                    return ['<b>ALIVE & ADDED<br>' + request + '</b></br>' + output]
+                else:
+                    self.logger.error("XML payload failed")
+                    return ['<b>ERROR<br>' + request + '</b></br>' + output]
+            else:
+                # XML payload configuration failed
+                self.logger.error("XML payload configuration failed")
+        else:
+            start_response(str(r_check.status_code), [('Content-Type', 'text/html')])
+            response_str = '<b>ERROR: %s Creating Harvester</b></br>' % r_check.status_code
+            for p in required_parameters:
+                response_str += '%s </br>' % p
+
+            #add the missing params
+            response_str += "<b> Missing Params</b>"
+            for p in missing_params:
+                response_str += '%s </br>' % p
+
+        return [response_str,start_response]        
 
     def get_harvesters(self, harvester_filter=None):
         harvesters = {}

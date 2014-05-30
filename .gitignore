@@ -44,3 +44,4 @@ coverage_results
 *.cov
 tags
 *.DS_Store
+local_extern.yml

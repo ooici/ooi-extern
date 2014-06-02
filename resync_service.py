@@ -135,7 +135,7 @@ class DataProductImporter():
             self.logger.info("cursor obtained...")
             # execute our Query
             for site_uuid in site_dict.keys():
-                cursor.execute("SELECT m.uuid,m.changedate,mr.registerdate,mr.rruuid,m.changedate NOT LIKE mr.registerdate AS mchanged FROM metadata m FULL JOIN metadataregistry mr ON m.uuid=mr.gnuuid WHERE m.harvestuuid='"+site_uuid+"' limit 5")
+                cursor.execute("SELECT m.uuid,m.changedate,mr.registerdate,mr.rruuid,m.changedate NOT LIKE mr.registerdate AS mchanged FROM metadata m FULL JOIN metadataregistry mr ON m.uuid=mr.gnuuid WHERE m.harvestuuid='" + site_uuid + "'")
                 records = cursor.fetchall()
                 self.logger.info("number of records..." + str(len(records)))
                 for rec in records:

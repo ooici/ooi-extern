@@ -1,0 +1,3 @@
+importer_service: http://localhost:8844/service=alive
+resync_service: http://localhost:8848/service=alive
+neptune_sos_service: http://localhost:8846/service=alive

@@ -188,25 +188,23 @@ class DataProductImporter():
                                 insert_stmt = "INSERT INTO metadataregistry (gnuuid,rruuid,registerdate) VALUES ('%(uuid)s','%(rruuid)s','%(changedate)s')" % insert_values
                                 cursor.execute(insert_stmt)
                                 self.logger.info("update meta data registry:"+str(insert_stmt))
-                        elif rec_mchanged:
-                            pass
-                            # The metadata record has changed
-                            # Delete existing Resource from the RR
-                            self.request_resource_action('resource_registry', 'delete', object_id=rec_rruuid)
-
-                            # Create new resource in the RR
-                            gwresponse = rruuid = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,
-                                                                                                                        "name": rec_name, 
-                                                                                                                        "description": rec_descrip, 
-                                                                                                                        "type_": "DataProduct",
-                                                                                                                        "reference_urls":[ref_url]
-                                                                                                                    })
+                                
+                        elif rec_mchanged:    
+                            #get the current data product
+                            dp = self.request_resource_action('resource_registry', 'read', object_id=rec_rruuid)
+                            #update the fields
+                            dp["name"] = rec_name
+                            dp["description"] = rec_descrip
+                            dp["reference_urls"] = [ref_url]
+                            # update new resource in the RR
+                            gwresponse = rruuid = self.request_resource_action('resource_registry', 'update', object=dp)
                             rruuid = gwresponse[0]
 
                             # UPDATE metadataregistry table record with updated registerdate and rruuid
                             update_values = {'uuid': uuid, 'rruuid': rruuid, 'changedate': rec_changedate}
                             update_stmt = ("UPDATE metadataregistry SET rruuid='%(rruuid)s', registerdate='%(changedate)s' WHERE gnuuid='%(uuid)s'" % update_values)
                             cursor.execute(update_stmt)
+
                         elif uuid == None:
                             # Metadata record was deleted by the harvester, cleanup the lookup table and the OOI RR
                             # Delete from RR

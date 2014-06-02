@@ -1,0 +1,6 @@
+importer_service: http://localhost:8844/service=alive
+resync_service: http://localhost:8848/service=alive
+neptune_sos_service: http://localhost:8846/service=alive
+importer_service_list_layers: http://localhost:8844/service=listlayers&name=ooi
+importer_service_request_harvester: http://localhost:8844/service=requestharvester&name=ooi
+geoserver_sos_status: http://localhost:8080/geoserver/ows?request=echo&service=sos

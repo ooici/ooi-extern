@@ -132,12 +132,12 @@ class DataProductImporter():
         try:
             conn = psycopg2.connect(database=self.GEONETWORK_DB_NAME, user=self.GEONETWORK_DB_USER, password=self.GEONETWORK_DB_PASS, host=self.GEONETWORK_DB_SERVER)
             cursor = conn.cursor()
-            self.logger.info("cursor obained...")
+            self.logger.info("cursor obtained...")
             # execute our Query
             for site_uuid in site_dict.keys():
-                cursor.execute("SELECT m.uuid,m.data,m.changedate,mr.registerdate,mr.rruuid,m.changedate NOT LIKE mr.registerdate AS mchanged FROM metadata m FULL JOIN metadataregistry mr ON m.uuid=mr.gnuuid WHERE m.harvestuuid='"+site_uuid+"' limit 5")
+                cursor.execute("SELECT m.uuid,m.changedate,mr.registerdate,mr.rruuid,m.changedate NOT LIKE mr.registerdate AS mchanged FROM metadata m FULL JOIN metadataregistry mr ON m.uuid=mr.gnuuid WHERE m.harvestuuid='" + site_uuid + "'")
                 records = cursor.fetchall()
-                self.logger.info("number of records..."+ str(len(records)))
+                self.logger.info("number of records..." + str(len(records)))
                 for rec in records:
                     uuid = rec[0]
 
@@ -148,8 +148,8 @@ class DataProductImporter():
                     rec_descrip = ""
                     try: 
                         #fix names if they contain invalid characters                   
-                        rec_name = self.get_name_info(soup).replace('\\r\\n',"").rstrip()
-                        rec_descrip = self.get_ident_info(soup).replace('\\r\\n',"").rstrip()
+                        rec_name = self.get_name_info(soup).replace('\\r\\n', "").rstrip()
+                        rec_descrip = self.get_ident_info(soup).replace('\\r\\n', "").rstrip()
                         #self.getkeywords(soup)
                         #self.getgeoextent(soup)
                         #dt = self.get_temporal_extent(soup)
@@ -165,7 +165,7 @@ class DataProductImporter():
                     rec_rruuid = rec[4]
                     rec_mchanged = rec[5]
 
-                    ref_url = self.get_reference_url(site_dict,site_uuid,uuid)
+                    ref_url = self.get_reference_url(site_dict, site_uuid, uuid)
 
                     try:                       
                         #add the data to the RR

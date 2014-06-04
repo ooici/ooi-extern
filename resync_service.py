@@ -56,6 +56,8 @@ class DataProductImporter():
         self.GEONETWORK_USER = ion_config['eoi']['geonetwork']['user_name']
         self.GEONETWORK_PASS = ion_config['eoi']['geonetwork']['password']
 
+        self.NEPTUNE_URL = "http://dmas.uvic.ca/DeviceListing?DeviceId="
+
         self.GEONETWORK_DB_SERVER = ion_config['eoi']['geonetwork']['database_server']
         self.GEONETWORK_DB_NAME = ion_config['eoi']['geonetwork']['database_name']
         self.GEONETWORK_DB_USER = ion_config['eoi']['geonetwork']['database_user']
@@ -297,9 +299,9 @@ class DataProductImporter():
         ref_url = ""
         if site_dict[site_uuid] == "neptune":
             temp_device_id =11206
-            ref_url = "http://dmas.uvic.ca/DeviceListing?DeviceId="+str(temp_device_id)
+            ref_url = self.NEPTUNE_URL+str(temp_device_id)
         else:
-            ref_url ="http://r3-pg-test02.oceanobservatories.org:8080/geonetwork/srv/eng/main.home?uuid="+str(uuid)    
+            ref_url = self.GEONETWORK_BASE_URL+"main.home?uuid="+str(uuid)    
             #self.logger.info("uuid:"+ref_url)
 
         #fix url encoding issues

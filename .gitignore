@@ -45,3 +45,4 @@ coverage_results
 tags
 *.DS_Store
 local_extern.yml
+Output.html

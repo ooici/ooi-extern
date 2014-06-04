@@ -56,6 +56,8 @@ class DataProductImporter():
         self.GEONETWORK_USER = ion_config['eoi']['geonetwork']['user_name']
         self.GEONETWORK_PASS = ion_config['eoi']['geonetwork']['password']
 
+        self.NEPTUNE_URL = "http://dmas.uvic.ca/DeviceListing?DeviceId="
+
         self.GEONETWORK_DB_SERVER = ion_config['eoi']['geonetwork']['database_server']
         self.GEONETWORK_DB_NAME = ion_config['eoi']['geonetwork']['database_name']
         self.GEONETWORK_DB_USER = ion_config['eoi']['geonetwork']['database_user']
@@ -126,63 +128,65 @@ class DataProductImporter():
     def get_meta_data_records_for_harvester(self, site_dict):
         """
         Lookup and extract metadata records from GeoNetwork and add to the RR
-        """
-        records = []
+        """        
         self.logger.info("getting meta data records for harvester...")
         try:
             conn = psycopg2.connect(database=self.GEONETWORK_DB_NAME, user=self.GEONETWORK_DB_USER, password=self.GEONETWORK_DB_PASS, host=self.GEONETWORK_DB_SERVER)
             cursor = conn.cursor()
-            self.logger.info("cursor obtained...")
-            # execute our Query
+            self.logger.info("SQL cursor obtained...")
+            # execute our Query            
             for site_uuid in site_dict.keys():
                 cursor.execute("SELECT m.uuid,m.changedate,mr.registerdate,mr.rruuid,m.changedate NOT LIKE mr.registerdate AS mchanged FROM metadata m FULL JOIN metadataregistry mr ON m.uuid=mr.gnuuid WHERE m.harvestuuid='" + site_uuid + "'")
+                records = []
                 records = cursor.fetchall()
-                self.logger.info("number of records..." + str(len(records)))
+                self.logger.info("Number of records for harvester"+ site_dict[site_uuid]+ ": " + str(len(records)))
                 for rec in records:
-                    uuid = rec[0]
-
-                    # Get the metadata record
-                    soup = BeautifulSoup(self.get_metadata_payload(uuid))
-                    #get the identification information for the place             
-                    rec_name = uuid
-                    rec_descrip = ""
                     try: 
+                        uuid = rec[0]
+
+                        # Get the metadata record
+                        soup = BeautifulSoup(self.get_metadata_payload(uuid))
+                        #get the identification information for the place             
+                        rec_name = uuid
+                        rec_descrip = ""
+                    
                         #fix names if they contain invalid characters                   
                         rec_name = self.get_name_info(soup).replace('\\r\\n', "").rstrip()
                         rec_descrip = self.get_ident_info(soup).replace('\\r\\n', "").rstrip()
-                        #self.getkeywords(soup)
+
+                        if site_dict[site_uuid] == "neptune":
+                            rec_params = self.getkeywords(soup)
+                            self.logger.info(str(rec_params))                 
+                        else:
+                            rec_params = None
+
                         #self.getgeoextent(soup)
                         #dt = self.get_temporal_extent(soup)
-                        #print rec_name, rec_descrip
-                    except Exception, e:
-                        #print "error getting nodes:", e, "\nUSING:", rec_name, "\n", rec_descrip
-                        self.logger.info(str(e))
-                        raise ValueError('Error getting name and description nodes from metadata record.')
+                           
+                        # Create RR entries and add/modify/delete lookups in metadataregistry table
+                        rec_changedate = rec[1]
+                        #rec_registerdate = rec[2]
+                        rec_rruuid = rec[3]
+                        rec_mchanged = rec[4]                        
+                        ref_url = self.get_reference_url(site_dict, site_uuid, uuid)
 
-                    # Create RR entries and add/modify/delete lookups in metadataregistry table
-                    rec_changedate = rec[2]
-                    #rec_registerdate = rec[3]
-                    rec_rruuid = rec[4]
-                    rec_mchanged = rec[5]
+                    except Exception, e:                       
+                        self.logger.info('Error getting record from metadata record.'+str(e))
+                        continue
 
-                    ref_url = self.get_reference_url(site_dict, site_uuid, uuid)
 
                     try:                       
                         #add the data to the RR
                         if rec_rruuid == None:
-                            # The metadata record is new                            
-                            gwresponse = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,
-                                                                                                                "name": rec_name, 
-                                                                                                                "description": rec_descrip, 
-                                                                                                                "type_": "DataProduct",
-                                                                                                                "reference_urls":[ref_url]
-                                                                                                            })
-                            self.logger.info("new meta data record:"+str(gwresponse))
-                            if gwresponse is None:
-                                self.logger.info("resource record was not created in SGS:"+str(gwresponse))
-                            else:    
-                                rruuid = gwresponse[0]                   
-                                self.logger.info("part 2 new meta data record:")         
+                            # The metadata record is new
+                            data_product_id = self.create_new_resource(rec_name,rec_descrip,ref_url,rec_params)
+
+                            
+                            if data_product_id is None:
+                                self.logger.info("resource record was not created in SGS:"+str(data_product_id))
+                            else:
+                                self.logger.info("new meta data record:"+str(data_product_id))    
+                                rruuid = data_product_id                 
                                 # Add record to metadataregistry table with registerdate and rruuid
                                 insert_values = {'uuid': uuid, 'rruuid': rruuid, 'changedate': rec_changedate}
                                 insert_stmt = "INSERT INTO metadataregistry (gnuuid,rruuid,registerdate) VALUES ('%(uuid)s','%(rruuid)s','%(changedate)s')" % insert_values
@@ -197,8 +201,7 @@ class DataProductImporter():
                             dp["description"] = rec_descrip
                             dp["reference_urls"] = [ref_url]
                             # update new resource in the RR
-                            gwresponse = rruuid = self.request_resource_action('resource_registry', 'update', object=dp)
-                            rruuid = gwresponse[0]
+                            rruuid = self.request_resource_action('resource_registry', 'update', object=dp)                            
 
                             # UPDATE metadataregistry table record with updated registerdate and rruuid
                             update_values = {'uuid': uuid, 'rruuid': rruuid, 'changedate': rec_changedate}
@@ -220,18 +223,93 @@ class DataProductImporter():
         except Exception, e:
             self.logger.info(str(e)+ ": I am unable to connect to the database...")
 
+    def generate_param_from_metadata(self,param_item):
+        #param should look like this
+        
+        param_def = {"name" : p,
+                    "display_name" : p,
+                    "description" : p,
+                    "units" : "unknown",
+                    "parameter_type" : "quantity",
+                    "value_encoding" : "float32",
+                    "type_" : "ParameterContext" 
+                    }
+        
+        return param_def
+
+    def create_new_resource(self,rec_name,rec_descrip,ref_url,params):
+        try:        
+            #if there are params add them else return
+            if params is None:
+               #create data product using the information provided
+                dp_id,_ = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,
+                                                                                                "name": rec_name, 
+                                                                                                "ooi_product_name":"External Resource",
+                                                                                                "quality_control_level":'Not Applicable',
+                                                                                                "processing_level_code":'External L0',
+                                                                                                "description": rec_descrip, 
+                                                                                                "type_": "DataProduct",
+                                                                                                "reference_urls":[ref_url]
+                                                                                            })
+            else:
+
+                #gets the simple time param id
+                simple_time,_ = self.request_resource_action('resource_registry', 'find_resources_ext', **{"alt_id":"PD7", "alt_id_ns":'PRE', "id_only":True})
+
+                #create the param dict
+                parameter_dictionary_id = self.request_resource_action('dataset_management', 'create_parameter_dictionary', **{"name":rec_name, 
+                                                                                 "parameter_context_ids":simple_time,
+                                                                                 "temporal_context" : 'time'})
+                #create stream def
+                stream_def = self.request_resource_action('pubsub_management', 'create_stream_definition', **{"name":rec_name, "parameter_dictionary_id":parameter_dictionary_id})
+
+                #create data product using the information provided
+                dp_id,_ = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,
+                                                                                                "name": rec_name, 
+                                                                                                "ooi_product_name":"External Resource",
+                                                                                                "quality_control_level":'Not Applicable',
+                                                                                                "processing_level_code":'External L0',
+                                                                                                "description": rec_descrip, 
+                                                                                                "type_": "DataProduct",
+                                                                                                "reference_urls":[ref_url]
+                                                                                            })
+                #join the steam def to the data product
+                #this will fail if it is already joined to a stream def (hasStreamDefinition already exists)
+                gwresponse = self.request_resource_action('resource_registry', 'create_association', **{"subject":dp_id, 
+                                                                                         "predicate":"hasStreamDefinition",
+                                                                                         "object" : stream_def
+                                                                                         })
+
+                for p in params:
+                    #create the param using the param def
+                    param_def = self.generate_param_from_metadata(p)
+
+                    param_id = self.request_resource_action('dataset_management', 'create_parameter', parameter_context=param_def)
+                    #add the param dict to the data product
+                    parameter_dictionary_id = self.request_resource_action('data_product_management', 
+                                                                      'add_parameter_to_data_product',
+                                                                       **{"parameter_context_id":param_id, 
+                                                                      'data_product_id':dp_id
+                                                                    })
+
+            return dp_id
+
+        except Exception, e:
+            raise e   
+
     def get_reference_url(self,site_dict,site_uuid,uuid):
         ref_url = ""
         if site_dict[site_uuid] == "neptune":
             temp_device_id =11206
-            ref_url = "http://dmas.uvic.ca/DeviceListing?DeviceId="+str(temp_device_id)
+            ref_url = self.NEPTUNE_URL+str(temp_device_id)
         else:
-            ref_url ="http://r3-pg-test02.oceanobservatories.org:8080/geonetwork/srv/eng/main.home?uuid="+str(uuid)    
-            self.logger.info("uuid:"+ref_url)
+            ref_url = self.GEONETWORK_BASE_URL+"main.home?uuid="+str(uuid)    
+            #self.logger.info("uuid:"+ref_url)
 
-        self.logger.info("uuid:"+str(uuid)) 
-
-        return ref_url  
+        #fix url encoding issues
+        ref_url = ref_url.replace("{","%7B")
+        ref_url = ref_url.replace("}","%7D")
+        return ref_url
 
     def get_metadata_payload(self, uuid):
         try: 
@@ -253,7 +331,7 @@ class DataProductImporter():
 
         url = self.SGS_URL
         url = "/".join([url, service_name, op])
-        self.logger.info("url:"+url)
+        #self.logger.info("url:"+url)
              
         r = {"serviceRequest": {
             "serviceName": service_name,
@@ -261,9 +339,7 @@ class DataProductImporter():
             "params": kwargs}
         }
 
-        resp = requests.post(url, data={'payload': Serializer.encode(r)})
-
-        self.logger.info("service gateway service not found")     
+        resp = requests.post(url, data={'payload': Serializer.encode(r)})        
 
         if "<h1>Not Found</h1>" in resp.text:
              self.logger.info("service gateway service not found")     
@@ -293,7 +369,13 @@ class DataProductImporter():
 
     def getkeywords(self, soup):
         keywords = soup.find("gmd:md_keywords")
-        deskeywords = soup.find("gmd:descriptivekeywords")
+        params = keywords.findAll('gco:characterstring')
+        param_list = []
+        for p in params:
+            param_list.append(p.text)
+        deskeywords = soup.find("gmd:descriptivekeywords")   
+        self.logger.info("Number of Params:"+str(len(param_list)))     
+        return param_list
 
     def getgeoextent(self, soup):
         bound_list = ["westboundlongitude", "eastboundlongitude", "northboundlatitude", "southboundlatitude"]

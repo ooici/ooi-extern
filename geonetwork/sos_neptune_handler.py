@@ -33,8 +33,10 @@ class Handler():
         self.startup()
 
     def startup(self):
-
-        stream = open("../extern.yml", 'r')
+        #depends which dir you are in 
+        
+        stream = open("extern.yml", 'r')            
+        
         ion_config = yaml.load(stream)
 
         self.PORT = ion_config['eoi']['neptune_sos_handler']['port']

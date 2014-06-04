@@ -135,7 +135,7 @@ class DataProductImporter():
             cursor = conn.cursor()
             self.logger.info("SQL cursor obtained...")
             # execute our Query            
-            for site_uuid in site_dict.keys():
+            for site_uuid in site_dict.keys():                
                 cursor.execute("SELECT m.uuid,m.changedate,mr.registerdate,mr.rruuid,m.changedate NOT LIKE mr.registerdate AS mchanged FROM metadata m FULL JOIN metadataregistry mr ON m.uuid=mr.gnuuid WHERE m.harvestuuid='" + site_uuid + "'")
                 records = []
                 records = cursor.fetchall()
@@ -146,13 +146,18 @@ class DataProductImporter():
 
                         # Get the metadata record
                         soup = BeautifulSoup(self.get_metadata_payload(uuid))
-                        #get the identification information for the place             
-                        rec_name = uuid
+                        #get the identification information for the place                                     
                         rec_descrip = ""
                     
                         #fix names if they contain invalid characters                   
                         rec_name = self.get_name_info(soup).replace('\\r\\n', "").rstrip()
+                        rec_name =  rec_name.replace('\\t', "").strip()
+
                         rec_descrip = self.get_ident_info(soup).replace('\\r\\n', "").rstrip()
+                        rec_descrip =  rec_descrip.replace('\\t', "").strip()                                                                    
+                        
+                        if rec_name == uuid:
+                            rec_name = rec_descrip
 
                         if site_dict[site_uuid] == "neptune":
                             rec_params = self.getkeywords(soup)
@@ -179,7 +184,7 @@ class DataProductImporter():
                         #add the data to the RR
                         if rec_rruuid == None:
                             # The metadata record is new
-                            data_product_id = self.create_new_resource(rec_name,rec_descrip,ref_url,rec_params)
+                            data_product_id = self.create_new_resource(uuid,rec_name,rec_descrip,ref_url,rec_params)
 
                             
                             if data_product_id is None:
@@ -218,7 +223,7 @@ class DataProductImporter():
                             delete_stmt = ("DELETE FROM metadataregistry WHERE rruuid='%(rruuid)s'" % delete_values)
                             cursor.execute(delete_stmt)
                     except Exception, e:
-                         self.logger.info(str(e)+ ": error performining sql commands")       
+                         self.logger.info(str(e)+ ": error performining sql commands")                                
                                         
         except Exception, e:
             self.logger.info(str(e)+ ": I am unable to connect to the database...")
@@ -226,9 +231,9 @@ class DataProductImporter():
     def generate_param_from_metadata(self,param_item):
         #param should look like this
         
-        param_def = {"name" : p,
-                    "display_name" : p,
-                    "description" : p,
+        param_def = {"name" : param_item,
+                    "display_name" : param_item,
+                    "description" : param_item,
                     "units" : "unknown",
                     "parameter_type" : "quantity",
                     "value_encoding" : "float32",
@@ -237,7 +242,7 @@ class DataProductImporter():
         
         return param_def
 
-    def create_new_resource(self,rec_name,rec_descrip,ref_url,params):
+    def create_new_resource(self,uuid,rec_name,rec_descrip,ref_url,params):
         try:        
             #if there are params add them else return
             if params is None:
@@ -257,11 +262,11 @@ class DataProductImporter():
                 simple_time,_ = self.request_resource_action('resource_registry', 'find_resources_ext', **{"alt_id":"PD7", "alt_id_ns":'PRE', "id_only":True})
 
                 #create the param dict
-                parameter_dictionary_id = self.request_resource_action('dataset_management', 'create_parameter_dictionary', **{"name":rec_name, 
+                parameter_dictionary_id = self.request_resource_action('dataset_management', 'create_parameter_dictionary', **{"name":uuid, 
                                                                                  "parameter_context_ids":simple_time,
                                                                                  "temporal_context" : 'time'})
                 #create stream def
-                stream_def = self.request_resource_action('pubsub_management', 'create_stream_definition', **{"name":rec_name, "parameter_dictionary_id":parameter_dictionary_id})
+                stream_def = self.request_resource_action('pubsub_management', 'create_stream_definition', **{"name":uuid, "parameter_dictionary_id":parameter_dictionary_id})
 
                 #create data product using the information provided
                 dp_id,_ = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,

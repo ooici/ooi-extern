@@ -6,7 +6,7 @@ from gevent.pywsgi import WSGIServer
 import httplib2
 import json
 import requests
-from bs4 import *
+from bs4 import BeautifulSoup
 import yaml
 import logging
 import psycopg2

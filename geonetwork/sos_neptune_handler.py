@@ -64,69 +64,66 @@ class Handler():
             output = ''
            
             neptune_sos_link = self.sos_url+"?"+request
-            print neptune_sos_link
             r_text = requests.get(neptune_sos_link)
-
-        print "---end of request---"
-
+        if r_text.status_code ==200:
         
-        soup = BeautifulSoup(r_text.text,"xml")   
-        obs_offferings = soup.findAll("ObservationOffering")
-        total = len(obs_offferings)
-        point = total / 100
-        increment = total / 20
-        i=0
-        for obs_offer in obs_offferings:   
-            #get the procedure
-            link = obs_offer.find("procedure")['xlink:href']
+            soup = BeautifulSoup(r_text.text,"xml")   
+            obs_offferings = soup.findAll("ObservationOffering")
+            total = len(obs_offferings)
+            point = total / 100
+            increment = total / 20
+            i=0
+            for obs_offer in obs_offferings:   
+                #get the procedure
+                link = obs_offer.find("procedure")['xlink:href']
 
-            d = self.describe_sensor_post_request(self.get_describe_sensor_xml(link))        
-            sensor_name = self.parse_sensor_name(d[0])
-            sensor_description = d[1]
-            field_mapping = d[2]
+                d = self.describe_sensor_post_request(self.get_describe_sensor_xml(link))        
+                sensor_name = self.parse_sensor_name(d[0])
+                sensor_description = d[1]
+                field_mapping = d[2]
 
-            #get the name
-            env = obs_offer.find("Envelope")
-            name = obs_offer.find("name").text
-            name = name.replace("Offering","")            
-            obs_offer.find("name").string = sensor_name
-            obs_offer["gml:id"] = sensor_name
+                #get the name
+                env = obs_offer.find("Envelope")
+                name = obs_offer.find("name").text
+                name = name.replace("Offering","")            
+                obs_offer.find("name").string = sensor_name
+                obs_offer["gml:id"] = sensor_name
 
 
-            #add description from describe sensor
-            destag = BeautifulSoup()
-            desc_tag = destag.new_tag("gml:description","")
-            desc_tag.string = name+":"+sensor_description
-            obs_offer.insert(1, desc_tag)
+                #add description from describe sensor
+                destag = BeautifulSoup()
+                desc_tag = destag.new_tag("gml:description","")
+                desc_tag.string = name+":"+sensor_description
+                obs_offer.insert(1, desc_tag)
 
-            for obs_prop in obs_offer.findAll('observedProperty'):
-                obs_link = str(obs_prop['xlink:href'])                
-                obs_prop['xlink:href'] = field_mapping[obs_link]
+                for obs_prop in obs_offer.findAll('observedProperty'):
+                    obs_link = str(obs_prop['xlink:href'])                
+                    obs_prop['xlink:href'] = field_mapping[obs_link]
 
-            env['srsName'] = "urn:ogc:def:crs:EPSG:6.5:4326" 
-           
-            sys.stdout.write("\r[" + "=" * (i / increment) +  " " * ((total - i)/ increment) + "]" +  str(i / point) + "%")
-            sys.stdout.flush()
+                env['srsName'] = "urn:ogc:def:crs:EPSG:6.5:4326" 
+               
+                sys.stdout.write("\r[" + "=" * (i / increment) +  " " * ((total - i)/ increment) + "]" +  str(i / point) + "%")
+                sys.stdout.flush()
 
-            i +=1
-            
-        response_headers = [('Content-Type', 'application/xml; charset=utf-8')]
-        status = '200 OK'
-        #remove the html codes i
-        html_start = "<html><body>"
-        html_end = "</body></html>"
-        xm_response = str(soup)
-        if xm_response.startswith(html_start):
-            xm_response = xm_response.replace(html_start, "")
-        if xm_response.endswith(html_end):  
-            xm_response = xm_response.replace(html_end,"")
+                i +=1
+                
+            response_headers = [('Content-Type', 'application/xml; charset=utf-8')]
+            status = '200 OK'
+            #remove the html codes i
+            html_start = "<html><body>"
+            html_end = "</body></html>"
+            xm_response = str(soup)
+            if xm_response.startswith(html_start):
+                xm_response = xm_response.replace(html_start, "")
+            if xm_response.endswith(html_end):  
+                xm_response = xm_response.replace(html_end,"")
 
-        #add the xml heeader
-        #xm_response = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"+xm_response
-        print "\n----------------"
-        #print "xmlresp:\n"+xm_response[:]
-        start_response(status, response_headers)
-        return [xm_response]
+            #add the xml heeader
+            #xm_response = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"+xm_response
+            print "\n----------------"
+            #print "xmlresp:\n"+xm_response[:]
+            start_response(status, response_headers)
+            return [xm_response]
 
     def find(self,sensor_string):
         ch = ":"

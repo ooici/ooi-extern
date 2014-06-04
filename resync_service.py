@@ -157,7 +157,9 @@ class DataProductImporter():
                         if site_dict[site_uuid] == "neptune":
                             rec_params = self.getkeywords(soup)
                             self.logger.info(str(rec_params))                 
-                        
+                        else:
+                            rec_params = None
+
                         #self.getgeoextent(soup)
                         #dt = self.get_temporal_extent(soup)
                            
@@ -177,7 +179,7 @@ class DataProductImporter():
                         #add the data to the RR
                         if rec_rruuid == None:
                             # The metadata record is new
-                            data_product_id = self.create_new_resource(rec_name,rec_descrip,ref_url,None)
+                            data_product_id = self.create_new_resource(rec_name,rec_descrip,ref_url,rec_params)
 
                             
                             if data_product_id is None:
@@ -224,10 +226,10 @@ class DataProductImporter():
     def generate_param_from_metadata(self,param_item):
         #param should look like this
         
-        param_def = {"name" : "example",
-                    "display_name" : "Example Parameter",
-                    "description" : "Only an example",
-                    "units" : "units",
+        param_def = {"name" : p,
+                    "display_name" : p,
+                    "description" : p,
+                    "units" : "unknown",
                     "parameter_type" : "quantity",
                     "value_encoding" : "float32",
                     "type_" : "ParameterContext" 
@@ -278,9 +280,9 @@ class DataProductImporter():
                                                                                          "object" : stream_def
                                                                                          })
 
-                for i in params:
+                for p in params:
                     #create the param using the param def
-                    param_def = self.generate_param_from_metadata("")
+                    param_def = self.generate_param_from_metadata(p)
 
                     param_id = self.request_resource_action('dataset_management', 'create_parameter', parameter_context=param_def)
                     #add the param dict to the data product

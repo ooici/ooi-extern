@@ -160,11 +160,9 @@ class DataProductImporter():
                         if rec_name == uuid:
                             rec_name = rec_descrip
 
-                        if site_dict[site_uuid] == "neptune":
-                            nep_fields = rec_name.split(":")
-                            rec_name = nep_fields[0]
-                            rec_descrip = ":".join(nep_fields[1:-1])
-
+                        if site_dict[site_uuid] == "neptune":                            
+                            #make the name and description the same
+                            rec_descrip = "sensor "+rec_name                            
                             rec_params = self.getkeywords(soup)
                             self.logger.info(str(rec_params))                 
                         else:
@@ -190,8 +188,6 @@ class DataProductImporter():
                         if rec_rruuid == None:
                             # The metadata record is new
                             data_product_id = self.create_new_resource(uuid,rec_name,rec_descrip,ref_url,rec_params)
-
-                            
                             if data_product_id is None:
                                 self.logger.info("resource record was not created in SGS:"+str(data_product_id))
                             else:
@@ -268,19 +264,16 @@ class DataProductImporter():
 
                 #gets the simple time param id
                 simple_time,_ = self.request_resource_action('resource_registry', 'find_resources_ext', **{"alt_id":"PD7", "alt_id_ns":'PRE', "id_only":True})
-                try:
+    
                         
-                    #create the param dict
-                    parameter_dictionary_id = self.request_resource_action('dataset_management', 'create_parameter_dictionary', **{"name":uuid, 
-                                                                                 "parameter_context_ids":simple_time,
-                                                                                 "temporal_context" : 'time'})
-
-                except Exception, e:
-                    self.logger.info(str(e)+ ": parameter_dictionary might already exist")
-                    pass
+                #create the param dict
+                parameter_dictionary_id = self.request_resource_action('dataset_management', 'create_parameter_dictionary', **{"name":uuid, 
+                                                                             "parameter_context_ids":simple_time,
+                                                                             "temporal_context" : 'time'})
 
                 #create stream def
                 stream_def = self.request_resource_action('pubsub_management', 'create_stream_definition', **{"name":uuid, "parameter_dictionary_id":parameter_dictionary_id})
+
 
                 #create data product using the information provided
                 dp_id,_ = self.request_resource_action('resource_registry', 'create', object={"category":self.EXTERNAL_CATEGORY,
@@ -314,12 +307,15 @@ class DataProductImporter():
             return dp_id
 
         except Exception, e:
+            #usually means that the 
+            self.logger.info("error creating data product:"+(str(e)))           
             raise e   
 
     def get_reference_url(self,site_dict,site_uuid,uuid,rec_name):
         ref_url = ""
-        if site_dict[site_uuid] == "neptune":            
-            ref_url = self.NEPTUNE_URL+str(rec_name)
+        if site_dict[site_uuid] == "neptune":
+            #split the name to get the sensor id            
+            ref_url = self.NEPTUNE_URL+str(rec_name.split(":")[0])
         else:
             ref_url = self.GEONETWORK_BASE_URL+"main.home?uuid="+str(uuid)    
             #self.logger.info("uuid:"+ref_url)

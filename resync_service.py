@@ -66,6 +66,7 @@ class DataProductImporter():
         self.EXTERNAL_CATEGORY = 3
 
         self.logger.info('Serving on '+str(self.RR_PORT)+'...')
+        print ('Serving on '+str(self.RR_PORT)+'...')
         server = WSGIServer(('', self.RR_PORT), self.application).serve_forever()
 
     def application(self, env, start_response):
@@ -160,6 +161,10 @@ class DataProductImporter():
                             rec_name = rec_descrip
 
                         if site_dict[site_uuid] == "neptune":
+                            nep_fields = rec_name.split(":")
+                            rec_name = nep_fields[0]
+                            rec_descrip = ":".join(nep_fields[1:-1])
+
                             rec_params = self.getkeywords(soup)
                             self.logger.info(str(rec_params))                 
                         else:
@@ -173,7 +178,7 @@ class DataProductImporter():
                         #rec_registerdate = rec[2]
                         rec_rruuid = rec[3]
                         rec_mchanged = rec[4]                        
-                        ref_url = self.get_reference_url(site_dict, site_uuid, uuid)
+                        ref_url = self.get_reference_url(site_dict, site_uuid, uuid,rec_name)
 
                     except Exception, e:                       
                         self.logger.info('Error getting record from metadata record.'+str(e))
@@ -223,7 +228,10 @@ class DataProductImporter():
                             delete_stmt = ("DELETE FROM metadataregistry WHERE rruuid='%(rruuid)s'" % delete_values)
                             cursor.execute(delete_stmt)
                     except Exception, e:
-                         self.logger.info(str(e)+ ": error performining sql commands")                                
+                         self.logger.info(str(e)+ ": error performining sql commands")          
+
+
+                    break                           
                                         
         except Exception, e:
             self.logger.info(str(e)+ ": I am unable to connect to the database...")
@@ -260,11 +268,17 @@ class DataProductImporter():
 
                 #gets the simple time param id
                 simple_time,_ = self.request_resource_action('resource_registry', 'find_resources_ext', **{"alt_id":"PD7", "alt_id_ns":'PRE', "id_only":True})
-
-                #create the param dict
-                parameter_dictionary_id = self.request_resource_action('dataset_management', 'create_parameter_dictionary', **{"name":uuid, 
+                try:
+                        
+                    #create the param dict
+                    parameter_dictionary_id = self.request_resource_action('dataset_management', 'create_parameter_dictionary', **{"name":uuid, 
                                                                                  "parameter_context_ids":simple_time,
                                                                                  "temporal_context" : 'time'})
+
+                except Exception, e:
+                    self.logger.info(str(e)+ ": parameter_dictionary might already exist")
+                    pass
+
                 #create stream def
                 stream_def = self.request_resource_action('pubsub_management', 'create_stream_definition', **{"name":uuid, "parameter_dictionary_id":parameter_dictionary_id})
 
@@ -302,11 +316,10 @@ class DataProductImporter():
         except Exception, e:
             raise e   
 
-    def get_reference_url(self,site_dict,site_uuid,uuid):
+    def get_reference_url(self,site_dict,site_uuid,uuid,rec_name):
         ref_url = ""
-        if site_dict[site_uuid] == "neptune":
-            temp_device_id =11206
-            ref_url = self.NEPTUNE_URL+str(temp_device_id)
+        if site_dict[site_uuid] == "neptune":            
+            ref_url = self.NEPTUNE_URL+str(rec_name)
         else:
             ref_url = self.GEONETWORK_BASE_URL+"main.home?uuid="+str(uuid)    
             #self.logger.info("uuid:"+ref_url)

@@ -41,6 +41,7 @@ class Handler():
 
         self.PORT = ion_config['eoi']['neptune_sos_handler']['port']
         self.logger.info('Serving Neptune Handler on '+str(self.PORT)+'...')
+        print ('Serving Neptune Handler on '+str(self.PORT)+'...')
         server = WSGIServer(('', self.PORT), self.application).serve_forever()
 
     def application(self,env, start_response):
@@ -85,16 +86,17 @@ class Handler():
                 #get the name
                 env = obs_offer.find("Envelope")
                 name = obs_offer.find("name").text
-                name = name.replace("Offering","")            
-                obs_offer.find("name").string = sensor_name
-                obs_offer["gml:id"] = sensor_name
-
+                name = name.replace("Offering","")                            
 
                 #add description from describe sensor
                 destag = BeautifulSoup()
                 desc_tag = destag.new_tag("gml:description","")
                 desc_tag.string = name+":"+sensor_description
                 obs_offer.insert(1, desc_tag)
+
+                obs_offer.find("name").string = sensor_name+":"+sensor_description
+                obs_offer["gml:id"] = sensor_name+":"+sensor_description
+
 
                 for obs_prop in obs_offer.findAll('observedProperty'):
                     obs_link = str(obs_prop['xlink:href'])                

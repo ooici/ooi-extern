@@ -577,6 +577,7 @@ class ResourceImporter():
             'encode functions': 'false',
             'fetch size': '1000',
             'host': str(self.POSTGRES_HOST),
+            'password' : str(self.POSTGRES_PASSWORD),
             'max connections': '10',
             'min connections': '1',
             'namespace': 'http://www.geonode.org/',

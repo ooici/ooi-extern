@@ -502,3 +502,9 @@ sh $CATALINA_HOME/bin/startup.sh
 esac
 exit 0
 ```
+
+## Deployment
+### GeoNetwork
+After system launch, all of the harvesters can be run by 'browsing' to the following url using curl or a web browser:
+```http://localhost:8848/service=runharvester&hfilter=all```
+

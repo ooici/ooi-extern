@@ -182,10 +182,9 @@ class DataProductImporter():
                         self.logger.info('Error getting record from metadata record.'+str(e))
                         continue
 
-
                     try:                       
                         #add the data to the RR
-                        if rec_rruuid == None:
+                        if rec_rruuid is None:
                             # The metadata record is new
                             data_product_id = self.create_new_resource(uuid,rec_name,rec_descrip,ref_url,rec_params)
                             if data_product_id is None:
@@ -194,7 +193,7 @@ class DataProductImporter():
                                 self.logger.info("new meta data record:"+str(data_product_id))    
                                 rruuid = data_product_id                 
                                 # Add record to metadataregistry table with registerdate and rruuid
-                                insert_values = {'uuid': uuid, 'rruuid': rruuid, 'changedate': rec_changedate}
+                                insert_values = {'uuid': uuid, 'rruuid': data_product_id, 'changedate': rec_changedate}
                                 insert_stmt = "INSERT INTO metadataregistry (gnuuid,rruuid,registerdate) VALUES ('%(uuid)s','%(rruuid)s','%(changedate)s')" % insert_values
                                 cursor.execute(insert_stmt)
                                 self.logger.info("update meta data registry:"+str(insert_stmt))
@@ -207,14 +206,14 @@ class DataProductImporter():
                             dp["description"] = rec_descrip
                             dp["reference_urls"] = [ref_url]
                             # update new resource in the RR
-                            rruuid = self.request_resource_action('resource_registry', 'update', object=dp)                            
+                            self.request_resource_action('resource_registry', 'update', object=dp)
 
                             # UPDATE metadataregistry table record with updated registerdate and rruuid
-                            update_values = {'uuid': uuid, 'rruuid': rruuid, 'changedate': rec_changedate}
+                            update_values = {'uuid': uuid, 'rruuid': rec_rruuid, 'changedate': rec_changedate}
                             update_stmt = ("UPDATE metadataregistry SET rruuid='%(rruuid)s', registerdate='%(changedate)s' WHERE gnuuid='%(uuid)s'" % update_values)
                             cursor.execute(update_stmt)
 
-                        elif uuid == None:
+                        elif uuid is None:
                             # Metadata record was deleted by the harvester, cleanup the lookup table and the OOI RR
                             # Delete from RR
                             self.request_resource_action('resource_registry', 'delete', object_id=rec_rruuid)
@@ -224,13 +223,9 @@ class DataProductImporter():
                             delete_stmt = ("DELETE FROM metadataregistry WHERE rruuid='%(rruuid)s'" % delete_values)
                             cursor.execute(delete_stmt)
                     except Exception, e:
-                         self.logger.info(str(e)+ ": error performining sql commands")          
-
-
-                    break                           
-                                        
+                        self.logger.info(str(e) + ": error performing sql commands")
         except Exception, e:
-            self.logger.info(str(e)+ ": I am unable to connect to the database...")
+            self.logger.info(str(e) + ": I am unable to connect to the database...")
 
     def generate_param_from_metadata(self,param_item):
         #param should look like this

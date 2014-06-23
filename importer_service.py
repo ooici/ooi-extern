@@ -16,7 +16,7 @@ from geoserver.support import prepare_upload_bundle, url
 import httplib2
 import json
 import requests
-from BeautifulSoup import *
+from bs4 import *
 import ast
 import yaml
 import logging

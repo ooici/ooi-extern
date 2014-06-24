@@ -7,38 +7,33 @@ __author__ = 'abird'
 import sys
 import math
 import numpy as np
-import numpy
-import string
 import time
 
 from multicorn import ColumnDefinition
 from multicorn import ForeignDataWrapper
 from multicorn import Qual
-from multicorn.compat import unicode_
 from multicorn.utils import log_to_postgres,WARNING,ERROR
-
-from coverage_model import SimplexCoverage, AbstractCoverage,QuantityType, ArrayType, ConstantType, CategoryType
 
 from numpy.random import random
 import numexpr as ne
 
 import simplejson
-from gevent import server
-from gevent.monkey import patch_all; patch_all()
-
-import gevent
+import requests
 
 import random
-from random import randrange
 import os 
 import datetime
+import logging
 
 TIME = 'time'
 
 #size of mock data
-cov_fail_data_size = 10**2
+cov_fail_data_size = 100
 #used for by passing coverage issues and generating mock data
 debug = False
+
+SERVER = "http://erddap-test.oceanobservatories.org:8080/erddap/tabledap/"
+
 
 class CovFdw(ForeignDataWrapper):
     """A foreign data wrapper for accessing an ION coverage data model.
@@ -53,26 +48,53 @@ class CovFdw(ForeignDataWrapper):
         self.cov_id = fdw_options["cov_id"]
         self.columns = fdw_columns
 
-    def execute(self, quals, req_columns):
-        #WARNING:  qualField:time qualOperator:>= qualValue:2011-02-11 00:00:00
-        #WARNING:  qualField:time qualOperator:<= qualValue:2011-02-12 23:59:59
-        log_to_postgres("LOADING Coverage At Path: "+self.cov_path, WARNING)
-        log_to_postgres("LOADING Coverage ID: "+self.cov_id, WARNING)
-        os.chdir('/Users/rpsdev/externalization')
-        log_to_postgres("dir: "+os.getcwd()+" \n")
+        logger = logging.getLogger('fdw_service')
+        hdlr = logging.FileHandler('/Users/rpsdev/log/fdw.log')
+        formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        hdlr.setFormatter(formatter)
+        logger.addHandler(hdlr) 
+        logger.setLevel(logging.DEBUG)
 
+        self.logger = logger
+        self.logger.info("Setting up fdw request...")
+        
+
+    def execute(self, quals, req_columns):
         #initiall set it to false
         cov_available = False 
+        param_list = []
+
+        for param in req_columns:
+            if param == "lat":
+                param = "latitude"
+            elif param == "lon":
+                param = "longitude"
+            
+            param_list.append(param)    
+
+        self.logger.info("DataFields Requested:"+str(param_list))
+
         try:
-            log_to_postgres("LOADING Coverage", WARNING)
-            cov = AbstractCoverage.load(self.cov_path)
-            cov_available = True 
-            #log_to_postgres("Cov Type:"+type(cov))
-        except Exception, e:
-            if debug:
-                log_to_postgres("failed to load coverage, processing mock data...:" + str(e),WARNING)
-            else:     
-                log_to_postgres("Failed to load coverage...:" + str(e),ERROR)
+            self.logger.info("getting data from errdap")
+            time_bounds = "&time%3E=2014-02-22T21:51:42.615Z&time%3C=2014-02-28T18:11:46.501Z"
+            resource = "data"+"a990236fb3184d6bbefec7cc267ce307"
+            url = SERVER+resource+".json?"+ ",".join(param_list)+time_bounds
+            
+            
+            if "time" in param_list:
+                url +="&orderBy(%22time%22)"
+                            
+            self.logger.info(url)
+            r = requests.get(url)
+            if r.status_code == 200:
+                ret_data = r.json()
+                ret_data = ret_data["table"]["rows"]
+                self.logger.info("got data...")
+                cov_available = True
+            else:    
+                self.logger.info("could not get data..."+r.text)
+        except Exception, e:            
+                self.logger.error("Failed to get data...:" + str(e))
 
         for qual in quals:
             if (qual.field_name == TIME):
@@ -81,58 +103,9 @@ class CovFdw(ForeignDataWrapper):
                     + " qualOperator:" + str(qual.operator) 
                     + " qualValue:" +str(qual.value), WARNING)
         
-        log_to_postgres("DataFields Requested:"+str(req_columns)+"\n", WARNING)
         #loads a coverage
-        if cov_available:
-            #log_to_postgres("Coverage PARAMS: "+str(cov.list_parameters())+"\n", WARNING)
-            log_to_postgres("TableFields:"+str(self.columns)+"\n", WARNING)
-            #time param
-            param_time = cov.get_parameter_values(TIME)
-            #mock data
-            self.generate_mock_real_data(len(param_time))
-            self.generate_mock_time_data(len(param_time))
-        #if the coverage is not available and debug is set
-        else:
-            #mock data
-            log_to_postgres("addiong mock data as coverage not availabe:"+str(cov_fail_data_size), WARNING)
-            self.generate_mock_real_data(cov_fail_data_size)
-            self.generate_mock_time_data(cov_fail_data_size)
-            param_time = self.param_mock_time_data
-            cov_available = True   
-            
-        if cov_available:    
-            #data object
-            start = time.time()
-            
-            data = []
-            #actual loop
-            for param_item in self.columns:
-                data_type = self.columns[param_item].type_name
-                col_name = self.columns[param_item].column_name
-                log_to_postgres(col_name+" Field: "+param_item+" \t data_type: "+data_type, WARNING)
-                if col_name in req_columns:
-                    #if the field is time add it to the return block
-                    if (param_item == TIME):
-                        param_from_cov = self.get_times(param_time)
-                        data.append(param_from_cov)
-
-                    elif (col_name.find(TIME)>=0):    
-                        data = self.append_mock_data_based_on_type(data_type,data)
-                    else:
-                        try:
-                            param_from_cov = cov.get_parameter_values(col_name)
-                            data.append(param_from_cov)
-                            pass
-                        except Exception, e:
-                            data = self.append_mock_data_based_on_type(data_type,data)
-                            pass
-
-                else:                
-                    data = self.append_mock_data_based_on_type(data_type,data)
-
-            #create np array to return
-            dataarray = np.array(data)
-            return dataarray.transpose()  
+        if cov_available:   
+            return ret_data
             
     def append_mock_data_based_on_type(self,data_type,data):
         if (data_type.startswith("timestamp")):

@@ -1,5 +1,5 @@
 """
-An ION Coverage Foreign Data Wrapper
+An ION Coverage Foreign Data Wrapper via erddap
 """
 
 __author__ = 'abird'
@@ -8,18 +8,14 @@ import sys
 import math
 import numpy as np
 import time
-
 from multicorn import ColumnDefinition
 from multicorn import ForeignDataWrapper
 from multicorn import Qual
 from multicorn.utils import log_to_postgres,WARNING,ERROR
-
 from numpy.random import random
 import numexpr as ne
-
 import simplejson
 import requests
-
 import random
 import os 
 import datetime
@@ -34,13 +30,10 @@ debug = False
 
 SERVER = "http://erddap-test.oceanobservatories.org:8080/erddap/tabledap/"
 
-
 class CovFdw(ForeignDataWrapper):
-    """A foreign data wrapper for accessing an ION coverage data model.
-    Valid options:
-    - time, inside the coverage model, shoulud always be seconds since 1900-01-01
-    - add 2208988800, number of seconds between 1900-01-01 and 1970-01-01
-    """
+    '''
+    A foreign data wrapper for accessing an ION coverage data model via erddap
+    '''
 
     def __init__(self, fdw_options, fdw_columns):
         super(CovFdw, self).__init__(fdw_options, fdw_columns)
@@ -105,36 +98,4 @@ class CovFdw(ForeignDataWrapper):
         
         #loads a coverage
         if cov_available:   
-            return ret_data
-            
-    def append_mock_data_based_on_type(self,data_type,data):
-        if (data_type.startswith("timestamp")):
-            data.append(self.param_mock_time_data)
-        elif(data_type.startswith("real")):
-            data.append(self.param_mock_data)    
-        else:
-             data.append(self.param_mock_data)    
-        return data            
-
-
-    def generate_mock_real_data(self,data_length):
-        start = time.time()
-        self.param_mock_data = np.repeat(0, [data_length], axis=0)
-        elapsedGen = (time.time() - start)
-        log_to_postgres("Time to complete MockData:"+str(elapsedGen), WARNING)   
-
-    #generate mock time data
-    def generate_mock_time_data(self,data_length):
-        #generate array of legnth
-        #time is seconds since 1970-01-01 (if its a float)
-        start = time.time()
-        self.param_mock_time_data = np.array([1+i for i in xrange(data_length)])
-        elapsedGen = (time.time() - start)
-        log_to_postgres("Time to complete MockTimeData:"+str(elapsedGen), WARNING)          
-
-    #convert date time object to string
-    def get_times(self,param_time):
-        #date time float is seconds since 1970-01-01
-        #formats the datetime string as  
-        s = [datetime.datetime.strftime(datetime.datetime.utcfromtimestamp(e*1000),"%Y-%m-%d %H:%M:%S") for e in param_time]
-        return s  
+            return ret_data    

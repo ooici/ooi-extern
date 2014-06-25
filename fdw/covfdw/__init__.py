@@ -13,7 +13,6 @@ from multicorn import ForeignDataWrapper
 from multicorn import Qual
 from multicorn.utils import log_to_postgres,WARNING,ERROR
 from numpy.random import random
-import numexpr as ne
 import simplejson
 import requests
 import random
@@ -56,8 +55,18 @@ class CovFdw(ForeignDataWrapper):
         #initiall set it to false
         cov_available = False 
         param_list = []
+        #data must really be in this format
+        master_cols = self.columns.keys()
 
-        for param in req_columns:
+        for qual in quals:
+                if (qual.field_name == TIME):
+                    log_to_postgres(
+                        "qualField:"+ str(qual.field_name) 
+                        + " qualOperator:" + str(qual.operator) 
+                        + " qualValue:" +str(qual.value), WARNING)
+
+
+        for param in master_cols:
             if param == "lat":
                 param = "latitude"
             elif param == "lon":
@@ -65,37 +74,46 @@ class CovFdw(ForeignDataWrapper):
             
             param_list.append(param)    
 
-        self.logger.info("DataFields Requested:"+str(param_list))
+        self.logger.info("DataFields Requested:"+str(param_list)+"\n"+"master:"+ str(master_cols))
+
+        #check that the length requested is the same as the length available
+        if len(req_columns) == len(master_cols):
+            ret_data = self.getSimpleDataStruct(param_list)
+            for row in ret_data:
+                yield row   
+        else:
+            #length is different               
+            self.logger.info("DataFields Requested dont match those availabe")
+
+
+    def getSimpleDataStruct(self,param_list):
+        '''
+        used to obtain the data when all fields are requested
+        i.e a simple/typical request 
+        '''
+        self.logger.info("resourceID:",self.cov_id)
 
         try:
             self.logger.info("getting data from errdap")
-            time_bounds = "&time%3E=2014-02-22T21:51:42.615Z&time%3C=2014-02-28T18:11:46.501Z"
+            time_bounds = "&time%3E=2014-02-22T21:51:42.615Z&time%3C=2014-02-22T22:11:46.501Z"
             resource = "data"+"a990236fb3184d6bbefec7cc267ce307"
             url = SERVER+resource+".json?"+ ",".join(param_list)+time_bounds
-            
             
             if "time" in param_list:
                 url +="&orderBy(%22time%22)"
                             
             self.logger.info(url)
             r = requests.get(url)
-            if r.status_code == 200:
-                ret_data = r.json()
+            if r.status_code == 200:                
+                ret_data = r.json()                
                 ret_data = ret_data["table"]["rows"]
                 self.logger.info("got data...")
                 cov_available = True
             else:    
-                self.logger.info("could not get data..."+r.text)
+                self.logger.info("Could not get data..."+r.text)
         except Exception, e:            
-                self.logger.error("Failed to get data...:" + str(e))
-
-        for qual in quals:
-            if (qual.field_name == TIME):
-                log_to_postgres(
-                    "qualField:"+ str(qual.field_name) 
-                    + " qualOperator:" + str(qual.operator) 
-                    + " qualValue:" +str(qual.value), WARNING)
+                self.logger.error("Failed to get data...:" + str(e))            
         
         #loads a coverage
-        if cov_available:   
-            return ret_data    
+        if cov_available:
+            return ret_data           

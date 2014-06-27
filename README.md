@@ -507,6 +507,38 @@ exit 0
 ### GeoNetwork
 After system launch, all of the harvesters can be run by 'browsing' to the following url using curl or a web browser:
 ```
-http://localhost:8848/service=runharvester&hfilter=all
+http://localhost:8844/service=runharvester&hfilter=all
 ```
-
+### Supervisord
+If desired, place the following supervisord configuration files in /etc/supervisord.d/ for the EOI services:
+Replace eoitest with the appropriate user and check paths.
+eoi_importer_service.conf
+```
+[program:eoi_importer_service]
+directory=/home/eoitest/ooi-extern/
+command=/home/eoitest/ooi-extern/bin/ipython init.py
+user=eoitest
+autostart=true
+autorestart=true
+redirect_stderr=True
+```
+eoi_resync_service.conf
+```
+[program:eoi_resync_service]
+directory=/home/eoitest/ooi-extern/
+command=/home/eoitest/ooi-extern/bin/ipython sync_init.py
+user=eoitest
+autostart=true
+autorestart=true
+redirect_stderr=True
+```
+eoi_sos_service.conf
+```
+[program:eoi_sos_service]
+directory=/home/eoitest/ooi-extern/
+command=/home/eoitest/ooi-extern/bin/ipython geonetwork/init_sos_handler.py
+user=eoitest
+autostart=true
+autorestart=true
+redirect_stderr=True
+```

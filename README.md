@@ -512,6 +512,7 @@ http://localhost:8844/service=runharvester&hfilter=all
 ### Supervisord
 If desired, place the following supervisord configuration files in /etc/supervisord.d/ for the EOI services:
 Replace eoitest with the appropriate user and check paths.
+
 eoi_importer_service.conf
 ```
 [program:eoi_importer_service]

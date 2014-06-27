@@ -1,5 +1,5 @@
 """
-An ION Coverage Foreign Data Wrapper
+An ION Coverage Foreign Data Wrapper via erddap
 """
 
 __author__ = 'abird'
@@ -7,45 +7,33 @@ __author__ = 'abird'
 import sys
 import math
 import numpy as np
-import numpy
-import string
 import time
-
 from multicorn import ColumnDefinition
 from multicorn import ForeignDataWrapper
 from multicorn import Qual
-from multicorn.compat import unicode_
 from multicorn.utils import log_to_postgres,WARNING,ERROR
-
-from coverage_model import SimplexCoverage, AbstractCoverage,QuantityType, ArrayType, ConstantType, CategoryType
-
 from numpy.random import random
-import numexpr as ne
-
-import simplejson
-from gevent import server
-from gevent.monkey import patch_all; patch_all()
-
-import gevent
-
+import simplejson as json
+import requests
 import random
-from random import randrange
 import os 
 import datetime
+import logging
 
 TIME = 'time'
 
 #size of mock data
-cov_fail_data_size = 10**2
+cov_fail_data_size = 100
 #used for by passing coverage issues and generating mock data
 debug = False
 
+SERVER = "http://localhost:8005/erddap/tabledap/"
+SGS_URL = "http://localhost:5000/ion-service"
+
 class CovFdw(ForeignDataWrapper):
-    """A foreign data wrapper for accessing an ION coverage data model.
-    Valid options:
-    - time, inside the coverage model, shoulud always be seconds since 1900-01-01
-    - add 2208988800, number of seconds between 1900-01-01 and 1970-01-01
-    """
+    '''
+    A foreign data wrapper for accessing an ION coverage data model via erddap
+    '''
 
     def __init__(self, fdw_options, fdw_columns):
         super(CovFdw, self).__init__(fdw_options, fdw_columns)
@@ -53,115 +41,163 @@ class CovFdw(ForeignDataWrapper):
         self.cov_id = fdw_options["cov_id"]
         self.columns = fdw_columns
 
-    def execute(self, quals, req_columns):
-        #WARNING:  qualField:time qualOperator:>= qualValue:2011-02-11 00:00:00
-        #WARNING:  qualField:time qualOperator:<= qualValue:2011-02-12 23:59:59
-        log_to_postgres("LOADING Coverage At Path: "+self.cov_path, WARNING)
-        log_to_postgres("LOADING Coverage ID: "+self.cov_id, WARNING)
-        os.chdir('/Users/rpsdev/externalization')
-        log_to_postgres("dir: "+os.getcwd()+" \n")
+        logger = logging.getLogger('fdw_service')
+        hdlr = logging.FileHandler('/Users/rpsdev/log/fdw.log')
+        formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        hdlr.setFormatter(formatter)
+        logger.addHandler(hdlr) 
+        logger.setLevel(logging.DEBUG)
 
-        #initiall set it to false
+        self.logger = logger
+        self.logger.info("Setting up fdw request...")
+        
+
+    def execute(self, quals, req_columns):
+        #initiall set it to false        
+        param_list = []
+        #data must really be in this format
+        master_cols = self.columns.keys()
+
+        time_bounds = False
+        for qual in quals:
+                if (qual.field_name == TIME):
+                    time_bounds = True
+                    log_to_postgres(
+                        "qualField:"+ str(qual.field_name) 
+                        + " qualOperator:" + str(qual.operator) 
+                        + " qualValue:" +str(qual.value), WARNING)
+
+
+        self.logger.info("quals:"+str(quals))
+
+        for param in master_cols:
+            #if param == "lat":
+            #    param = "latitude"
+            #elif param == "lon":
+            #    param = "longitude"
+            
+            param_list.append(param)           
+
+        #check that the length requested is the same as the length available
+        if len(param_list) == len(master_cols):
+            ret_data = self.getSimpleDataStruct(param_list,time_bounds)
+            
+            #if there is data
+            for row in ret_data:
+                yield row   
+        else:
+            #length is different               
+            self.logger.info("DataFields Requested dont match those availabe")
+            self.logger.info("DataFields   Requested:"+str(param_list))
+            self.logger.info("masterFields Requested:"+ str(master_cols))                        
+            self.logger.info(str(len(param_list))+" vs " + str(len(master_cols)))
+
+
+    def getSimpleDataStruct(self,param_list,time_bounds):
+        '''
+        used to obtain the data when all fields are requested
+        i.e a simple/typical request 
+        '''
+        self.logger.info("resourceID:",self.cov_id)
         cov_available = False 
         try:
-            log_to_postgres("LOADING Coverage", WARNING)
-            cov = AbstractCoverage.load(self.cov_path)
-            cov_available = True 
-            #log_to_postgres("Cov Type:"+type(cov))
-        except Exception, e:
-            if debug:
-                log_to_postgres("failed to load coverage, processing mock data...:" + str(e),WARNING)
-            else:     
-                log_to_postgres("Failed to load coverage...:" + str(e),ERROR)
 
-        for qual in quals:
-            if (qual.field_name == TIME):
-                log_to_postgres(
-                    "qualField:"+ str(qual.field_name) 
-                    + " qualOperator:" + str(qual.operator) 
-                    + " qualValue:" +str(qual.value), WARNING)
+            dataproduct_id,_ = self.request_resource_action('resource_registry', 'find_subjects', **{"object":self.cov_id, "predicate":'hasDataset', "id_only":True})
+            if (len(dataproduct_id))> 0:
+                dp_id = dataproduct_id[0]
+                self.logger.info("data product id from sgs:"+str((dataproduct_id[0])))
+                
+                #create time bounds if available
+                if time_bounds:
+                    time_bounds_str = "&time%3E=2014-02-22T21:51:42.615Z&time%3C=2014-02-22T22:11:46.501Z"
+                else:
+                    time_bounds_str = ""
+
+                resource = "data" + dp_id
+                #create url
+                url = SERVER+resource+".json?"+ ",".join(param_list)+time_bounds_str
+                
+                #if time is in there add the orderby
+                if "time" in param_list:
+                    url +="&orderBy(%22time%22)"
+                                
+                self.logger.info(url)
+                r = requests.get(url)
+                if r.status_code == 200:
+                    #if available                
+                    ret_data = r.json()                
+                    ret_data = ret_data["table"]["rows"]
+                    self.logger.info("got data...")
+                    cov_available = True
+                elif "Your query produced no matching results" in r.text:
+                    #no data
+                    self.logger.info("not data for request...")
+                    return None
+                else:    
+                    #error
+                    self.logger.info("Could not get data..."+r.text)
+                    return None
+        except Exception, e:
+                #fail            
+                self.logger.error("Failed to get data...:" + str(e))            
+
         
-        log_to_postgres("DataFields Requested:"+str(req_columns)+"\n", WARNING)
         #loads a coverage
         if cov_available:
-            #log_to_postgres("Coverage PARAMS: "+str(cov.list_parameters())+"\n", WARNING)
-            log_to_postgres("TableFields:"+str(self.columns)+"\n", WARNING)
-            #time param
-            param_time = cov.get_parameter_values(TIME)
-            #mock data
-            self.generate_mock_real_data(len(param_time))
-            self.generate_mock_time_data(len(param_time))
-        #if the coverage is not available and debug is set
+            return ret_data 
         else:
-            #mock data
-            log_to_postgres("addiong mock data as coverage not availabe:"+str(cov_fail_data_size), WARNING)
-            self.generate_mock_real_data(cov_fail_data_size)
-            self.generate_mock_time_data(cov_fail_data_size)
-            param_time = self.param_mock_time_data
-            cov_available = True   
-            
-        if cov_available:    
-            #data object
-            start = time.time()
-            
-            data = []
-            #actual loop
-            for param_item in self.columns:
-                data_type = self.columns[param_item].type_name
-                col_name = self.columns[param_item].column_name
-                log_to_postgres(col_name+" Field: "+param_item+" \t data_type: "+data_type, WARNING)
-                if col_name in req_columns:
-                    #if the field is time add it to the return block
-                    if (param_item == TIME):
-                        param_from_cov = self.get_times(param_time)
-                        data.append(param_from_cov)
+            return None       
 
-                    elif (col_name.find(TIME)>=0):    
-                        data = self.append_mock_data_based_on_type(data_type,data)
-                    else:
-                        try:
-                            param_from_cov = cov.get_parameter_values(col_name)
-                            data.append(param_from_cov)
-                            pass
-                        except Exception, e:
-                            data = self.append_mock_data_based_on_type(data_type,data)
-                            pass
 
-                else:                
-                    data = self.append_mock_data_based_on_type(data_type,data)
 
-            #create np array to return
-            dataarray = np.array(data)
-            return dataarray.transpose()  
-            
-    def append_mock_data_based_on_type(self,data_type,data):
-        if (data_type.startswith("timestamp")):
-            data.append(self.param_mock_time_data)
-        elif(data_type.startswith("real")):
-            data.append(self.param_mock_data)    
+
+
+    def request_resource_action(self, service_name, op, **kwargs):  
+
+        url = SGS_URL
+        url = "/".join([url, service_name, op])
+        #self.logger.info("url:"+url)
+             
+        r = {"serviceRequest": {
+            "serviceName": service_name,
+            "serviceOp": op,
+            "params": kwargs}
+        }
+
+        resp = requests.post(url, data={'payload': Serializer.encode(r)})        
+
+        if "<h1>Not Found</h1>" in resp.text:
+             self.logger.info("service gateway service not found")     
         else:
-             data.append(self.param_mock_data)    
-        return data            
+            if resp.status_code == 200:
+                data = resp.json()
+                if 'GatewayError' in data['data']:
+                    error = GatewayError(data['data']['Message'])
+                    self.logger.info("GATEWAY ERROR:"+str(error))     
+                if 'GatewayResponse' in data['data']:
+                    return data['data']['GatewayResponse']   
+                    
 
 
-    def generate_mock_real_data(self,data_length):
-        start = time.time()
-        self.param_mock_data = np.repeat(0, [data_length], axis=0)
-        elapsedGen = (time.time() - start)
-        log_to_postgres("Time to complete MockData:"+str(elapsedGen), WARNING)   
+class Serializer:
+    """
+    Serializes JSON data
+    """
 
-    #generate mock time data
-    def generate_mock_time_data(self,data_length):
-        #generate array of legnth
-        #time is seconds since 1970-01-01 (if its a float)
-        start = time.time()
-        self.param_mock_time_data = np.array([1+i for i in xrange(data_length)])
-        elapsedGen = (time.time() - start)
-        log_to_postgres("Time to complete MockTimeData:"+str(elapsedGen), WARNING)          
+    def __init__(self):
+        pass
 
-    #convert date time object to string
-    def get_times(self,param_time):
-        #date time float is seconds since 1970-01-01
-        #formats the datetime string as  
-        s = [datetime.datetime.strftime(datetime.datetime.utcfromtimestamp(e*1000),"%Y-%m-%d %H:%M:%S") for e in param_time]
-        return s  
+    @classmethod
+    def encode(cls, message):
+        return json.dumps(message)
+
+    @classmethod
+    def decode(cls, message):
+        return json.loads(message, object_hook=cls._obj_hook)
+
+    @classmethod
+    def _obj_hook(cls, dct):
+        if '__np__' in dct:
+            dct = dct['__np__']
+            return np.array(dct['data'], dtype=dct['dtype'])
+        return dct                                

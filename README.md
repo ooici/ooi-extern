@@ -1,59 +1,75 @@
-ooi-extern
-==========
+# ooi-extern (ooi external services), EOI-Services
 
-## Using the resync service
+OOI Extern project encompasses the majority of the items required for the EOI services of [OOI](https://github.com/ooici/coi-services)
 
-### simple test
+## Overview of Services
 
-start a container using something like the following `bin/pycc --rel res/deploy/r2deploy.yml -s test -fc`
-when you get to the command line do a `start_mx()`. you can also inlcude the flag to start it during container load.
+There are a number of services that make up the EOI service stack, the majority of which are located in this project. The list below outlines each of them and a quick overview.
 
-start the resync server `bin/ipython sync_init.py`
+* Importer service (has an [init](https://github.com/ooici/ooi-extern/blob/master/init.py))
+    * is a WSGI service   
+* Resync service (has an [init](https://github.com/ooici/ooi-extern/blob/master/sync_init.py))
+    * is a WSGI service   
+* Neptune SOS service (Neptune SOS service handler/middle man service)
+    * is a WSGI service      
+* Coverage FDW (foreign data wrapper), (has a [setup](https://github.com/ooici/ooi-extern/blob/master/fdw/setup.py))
+    * postgres extension (requires multicorn, and postgres using python 2.7.x (not 2.6))   
 
-then pass it a query something like `http://localhost:8848/syncharvesters=neptune,ioos&ooi=geonetwork`
+## Install
 
-## Using the importer service
+* cd to the ooi-extern directory and do a `python bootstrap.py`, once complete, do a `bin/buildout`.
 
-in order for the coverage model to be loaded and used the [pyon.yml name](https://github.com/ooici/ion-definitions/blob/master/res/config/pyon.yml#L14)  needs to be set to `ion` other wise the data will not be loaded.
+## Resync service
 
-## initial setup
-cd to the ooi-extern directory and do a `python bootstrap.py`, once complete do a `bin/buildout`.
+The resync service creates resources inside the resources registry for harvester metadata records.
 
-## Importer Service
-This service handles the communication between the DMS and Geoserver. The importer service allows the modification (add,remove) of geoserver data layers from ooi coverages
+### Example
 
-run `bin/ipython init.py`
+* start an OOI container using something like the following `bin/pycc --rel res/deploy/r2deploy.yml -s test -fc`
+* when the loading finishes and you get to the command line do a `start_mx()` (you can also inlcude the flag to start it during container load)
+* start the resync server `bin/ipython sync_init.py`
+* pass it a query something like `http://localhost:8848/syncharvesters=neptune,ioos&ooi=geonetwork`
+* The above query tells the resync service to sync the defined harvesters
 
-the service will tell you which port it is on. you can simply then pass a query to the service eg.
+## Importer service
 
-is the service alive
-`http://localhost:8844/service=alive&name=ooi&id=ooi`
+The importer service is used by [coi-services specifically table loader](https://github.com/ooici/coi-services/blob/master/ion/services/eoi/table_loader.py) to generate externally available endpoints via geoserver. These endpoints are generate from the dataset management service and every public dataset processed. The importer service allows the modification (add,remove) of geoserver data layers from ooi coverages
 
-add a layer
-`http://localhost:8844/service=addlayer&name="DATASET_ID"&id="DATASET_ID"`
+The importer service is also used to handler some aspects of the metadata harvesters used in geonetwork
 
-reset the datastore
-`http://localhost:8844/service=resetstore&name=ooi&id=ooi`
+### Example
+
+* run `bin/ipython init.py`
+
+* is the service alive `http://localhost:8844/service=alive&name=ooi&id=ooi`
+
+* add a layer `http://localhost:8844/service=addlayer&name="DATASET_ID"&id="DATASET_ID"`
+
+* `http://localhost:8844/service=resetstore&name=ooi&id=ooi`
 
 ### Install Notes
 
-NOTE: postgres needs to be buildout against pyon 2.7.X other wise things will not run correctly you can modify your postgres setup to bypass some of the issues if you are using  `supd` but this requires adding paths to eggs for coverage and everything else.
+NOTE: postgres needs to be buildout against python 2.7.X other wise things will not run correctly you can modify your postgres setup to bypass some of the issues if you are using  `supd` but this requires adding paths to eggs.
 
-### Typical use of FDW
+## Typical use of FDW
 
-i suggest reading information on FDW from the [multicorn page](http://multicorn.org/foreign-data-wrappers) before proceding
+I suggest reading information on FDW from the [multicorn page](http://multicorn.org/foreign-data-wrappers) before proceding. The FDW needs to be created manually in the postgres instance, the FDT's are created automatically in the coi-services table-loader.py.
 
+Manually create the extension
 * Create the extension
 ```
 CREATE EXTENSION multicorn
 ```
 
+Manually create the server
 * create the server using the FDW
 ``` 
 CREATE SERVER cov_srv foreign data wrapper multicorn options (
     wrapper 'covfdw.CovFdw'
 );
 ```
+
+Below is a short example on the creation of a FDT, once the extension and server are created
 
 * create the foreign data table with the path to the dataset
 ```
@@ -88,20 +104,31 @@ CREATE OR REPLACE FUNCTION runCovTest() returns text as $$
 $$ LANGUAGE SQL ;
 ```
 
-* Because the srid is fixed geom can be overridden using postgres mk_point, to caluclate the SRID from the lat,lon of a coverage by generating a postgres view as follows.
+* the view is created automatially. Because the srid is fixed geom can be overridden using postgres mk_point, to caluclate the SRID from the lat,lon of a coverage by generating a postgres view as follows.
 ```
 CREATE or replace VIEW covproj as 
 SELECT ST_SetSRID(ST_MakePoint(lon, lat),4326) as proj, dataset_id, time, cond, temp from covtest;
 ```
 
-* notice that the server is called `cov_src`, and the data table is called `cov_test` and the view containing the srid information is called `covproj`. To view the information stored you could simply do:
+* notice that the server is called `cov_src`, and the data table is called `cov_test` and the view containing the srid information is called `covproj`. 
+To view the information stored you could simply do:
 ``` sql
 SELECT * [time,cond,temp] from covproj [limit #] [where 'field' = 'condition'];
 ```
 
-###Install FDW alongside coverage model using ooivm.
+## Install the FDW 
 
-before proceding review the following site, particually the "how do we do that?" section:
+The foreign data wrapper (FDW) allows the communication of data via postgres. To install the EOI FDW there is a [`setup.py`]( https://github.com/ooici/ooi-extern/blob/master/fdw/setup.py) that does all the hard work. This setup file installs the egg to the `site-packages` directory, so be sure you are in the correct `virt env` when doing it.
+
+## Install EOI Services
+
+### Short Version
+
+At present the FDW/FDT does not use the coverage-model/pyon, therefore the dependancy list is only `json` and `requests`. These dependancies are required for the connection and parsing of the [erddap json data](https://github.com/ooici/ooi-extern/blob/master/fdw/covfdw/__init__.py#L118-L129). As long as these dependancies are available in the postgres instance the FDW/FDT should work fine.
+
+### Long version
+
+Before proceding review the following site, particually the "how do we do that?" section:
 
 ```
 http://multicorn.org/implementing-an-fdw/
@@ -170,7 +197,6 @@ vi ~/.bash_profile
 ```
 
 ```
-# .bash_profile
 
 # Get the aliases and functions
 if [ -f ~/.bashrc ]; then
@@ -185,9 +211,7 @@ PATH=/home/eoitest/ooi-extern/fdw:$PATH
 
 export PATH
 ```
-
 as the postgres user do the same as above
-
 switch to the postgres user
 ```
 sudo su - postgres
@@ -234,6 +258,8 @@ then do the following
 pip install numpy==1.7.1
 pip install -U setuptools==0.8
 pip install --upgrade setuptools
+pip install requests
+pip install simplejson
 ```
 
 edit the profile
@@ -255,60 +281,16 @@ use virtual machine python
 
 `sudo ~/.virtualenvs/eoipg/bin/python setup.py develop`
 
-### Coverage Model
-
-build out the coverage model.
-`cd ../coverage-model`
-
-`git submodule update --init`
-
-`sudo ~/.virtualenvs/eoipg/bin/python bootstrap.py -v 2.2.0`
-
-
-build out the coverage model `bin/buildout`, incase of permissions issues do this: `sudo chown eoitest:eoitest coverage-model`
-
-* if you get an error for psycopg2 do the following `pip install psycopg2==2.5.1` then `bin/buildout`
-
-build out the interfaces `bin/generate_interfaces` you should get the following `generate_interfaces: Completed with exit code: 0`
-
-
-### Pyon
-```
-cd ../pyon
-git submodule update --init
-sudo ~/.virtualenvs/eoipg/bin/python bootstrap.py -v 2.2.0
-```
-incase of permissions issues `sudo chown eoitest:eoitest pyon`
-`bin/buildout`
-`bin/generate_interfaces`
-
-coverage model dependancy on pyon is here
-```
-https://github.com/ooici/coverage-model/blob/master/coverage_model/utils.py
-```
-
 the site packages for postgres should be located in `/opt/python2.7/lib/python2.7/site-packages`
 
 sort out python pathing issues, i.e the python path in psql
 for notes see `http://www.postgresql.org/docs/9.2/static/plpython-envar.html`
 
-the PYTHONPATH needs to be set in the following file `/etc/profile.d/postgresql.sh` with all the eggs in the coverage model.
+the PYTHONPATH needs to be set in the following file `/etc/profile.d/postgresql.sh`
 
 cd to dir and make backup
 `cd /etc/profile.d/`
 `sudo cp postgresql.sh postgresql.sh.bk`
-
-in ~/ooi-extern of eoitest do
-`find /home/eoitest/ooi-extern/extern/coverage-model/eggs -name *.egg > eoieggs.txt`
-
-then create the new file to contain the python path information
-`python path_tool.py`
-
-as main user not POSTGRES or EOITEST
-
-```
-sudo bash -c 'cat /home/eoitest/ooi-extern/python_path.txt >> /etc/profile.d/postgresql.sh'
-```
 
 set python in postgressql.sh
 ```
@@ -326,21 +308,16 @@ sudo /opt/python2.7/bin/pip install simplejson
 make sure numpy is installed
 ```
 sudo /opt/python2.7/bin/pip install numpy
-sudo /opt/python2.7/bin/pip install psycopg2
 ```
 if requirement is satisfied `Requirement already satisfied`
 
-install psycopg2 and regular user not eoitest or postgres
-`pip install psycopg2`
-
-make sure numpy and psycopg2 are on the `select checkPath();` list, if it is not add it
+make sure numpy is on the `select checkPath();` list, if it is not add it
 i.e 
 ```
 /opt/python2.7/lib/python2.7/site-packages/numpy-1.8.1-py2.7.egg-info
-/opt/python2.7/lib/python2.7/site-packages/psycopg2-2.5.2-py2.7.egg-info
 ```
 
-restart the services by doing a `sudo /etc/init.d/postgresql-9.3 stop` then ps -ef | grep psql or postgres to see if it stopped running then `sudo /etc/init.d/postgresql-9.3 start`. check that the path has been updated using...
+restart the services by doing a `sudo /etc/init.d/postgresql-9.3 stop` then `ps -ef | grep psql` or postgres to see if it stopped running then `sudo /etc/init.d/postgresql-9.3 start`. check that the path has been updated using...
 
 ```
 sudo su - postgres
@@ -354,33 +331,14 @@ create and run the imports that are used by the covfdw to verify they will work
 CREATE or replace FUNCTION test ()
   RETURNS text
 AS $$
- import sys
- import math
  import numpy as np
- import numpy
- import string
- import time
  from multicorn import ColumnDefinition
  from multicorn import ForeignDataWrapper
  from multicorn import Qual
- from multicorn.compat import unicode_
  from multicorn.utils import log_to_postgres,WARNING,ERROR
 
- from numpy.random import random
- import numexpr as ne
-
  import simplejson
- from gevent import server
- from gevent.monkey import patch_all; patch_all()
-
- import gevent
-
- import random
- from random import randrange
- import os 
- import datetime
-
- from coverage_model import SimplexCoverage, AbstractCoverage,QuantityType, ArrayType, ConstantType, CategoryType
+ import requests
 
  return '\n'.join(sys.path)
 $$ LANGUAGE plpythonu;

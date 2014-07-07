@@ -29,6 +29,7 @@ debug = False
 
 SERVER = "http://localhost:8005/erddap/tabledap/"
 SGS_URL = "http://localhost:5000/ion-service"
+LOG_LOCATION = "/Users/rpsdev/log/fdw.log"
 
 class CovFdw(ForeignDataWrapper):
     '''
@@ -42,7 +43,7 @@ class CovFdw(ForeignDataWrapper):
         self.columns = fdw_columns
 
         logger = logging.getLogger('fdw_service')
-        hdlr = logging.FileHandler('/Users/rpsdev/log/fdw.log')
+        hdlr = logging.FileHandler(LOG_LOCATION)
         formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
         hdlr.setFormatter(formatter)
         logger.addHandler(hdlr) 
@@ -58,42 +59,66 @@ class CovFdw(ForeignDataWrapper):
         #data must really be in this format
         master_cols = self.columns.keys()
 
-        time_bounds = False
-        for qual in quals:
-                if (qual.field_name == TIME):
-                    time_bounds = True
-                    log_to_postgres(
-                        "qualField:"+ str(qual.field_name) 
-                        + " qualOperator:" + str(qual.operator) 
-                        + " qualValue:" +str(qual.value), WARNING)
+        self.logger.info("req_columns:"+str(req_columns))
+
+        time_available = False
+        time_bounds = None
+
+        #self.logger.info("quals:"+str(quals))
+        for qual in quals:            
+            if (qual.field_name == TIME):
+                if time_bounds is not None:
+                    time_bounds+= "&"+str(qual.field_name)+str(qual.operator)+str(qual.value)
+                else:
+                    time_bounds = "&"+str(qual.field_name)+str(qual.operator)+str(qual.value)
+                    time_available = True
+
+        #fix the arrows
+        time_bounds = time_bounds.replace(">", "%3E")
+        time_bounds = time_bounds.replace("<", "%3C")
 
 
-        self.logger.info("quals:"+str(quals))
-
-        for param in master_cols:
-            #if param == "lat":
-            #    param = "latitude"
-            #elif param == "lon":
-            #    param = "longitude"
-            
-            param_list.append(param)           
-
-        #check that the length requested is the same as the length available
-        if len(param_list) == len(master_cols):
-            ret_data = self.getSimpleDataStruct(param_list,time_bounds)
-            
+        #TODO verify requested requirements
+        if len(req_columns) == len(master_cols):
+            #####SIMPLE---------
+            #if the request is the same length as available just set it, else construct it
+            param_list = master_cols
+             #check that the length requested is the same as the length available
+            ret_data = self.getSimpleDataStruct(param_list,time_available,time_bounds)            
             #if there is data
             for row in ret_data:
                 yield row   
+            #-------------------
         else:
-            #length is different               
-            self.logger.info("DataFields Requested dont match those availabe")
+            #####COMPLEX--------
+            #get the req columns
+            for param in req_columns:
+                param_list.append(param)           
+               
             self.logger.info("DataFields   Requested:"+str(param_list))
-            self.logger.info("masterFields Requested:"+ str(master_cols))                        
-            self.logger.info(str(len(param_list))+" vs " + str(len(master_cols)))
+            ret_data = self.getSimpleDataStruct(param_list,time_available,time_bounds)
 
+            for row in ret_data:
+                #create new row from data
+                new_row = {}
+                for col in master_cols:
+                    #create empty row
+                    new_row[col] = None
 
-    def getSimpleDataStruct(self,param_list,time_bounds):
+                for i in range(0,len(param_list)):
+                    #add data in for requested params
+                    param = param_list[i]                    
+                    self.logger.info("param:"+str(param))
+                    self.logger.info("val:"+str(row[i]))
+                    new_row[param] = row[i]
+
+                self.logger.info("row:"+str(new_row))
+                yield new_row  
+
+            
+            #-------------------     
+
+    def getSimpleDataStruct(self,param_list,time_available,time_bounds):
         '''
         used to obtain the data when all fields are requested
         i.e a simple/typical request 
@@ -108,8 +133,8 @@ class CovFdw(ForeignDataWrapper):
                 self.logger.info("data product id from sgs:"+str((dataproduct_id[0])))
                 
                 #create time bounds if available
-                if time_bounds:
-                    time_bounds_str = "&time%3E=2014-02-22T21:51:42.615Z&time%3C=2014-02-22T22:11:46.501Z"
+                if time_available:
+                    time_bounds_str = time_bounds
                 else:
                     time_bounds_str = ""
 
@@ -118,7 +143,7 @@ class CovFdw(ForeignDataWrapper):
                 url = SERVER+resource+".json?"+ ",".join(param_list)+time_bounds_str
                 
                 #if time is in there add the orderby
-                if "time" in param_list:
+                if TIME in param_list:
                     url +="&orderBy(%22time%22)"
                                 
                 self.logger.info(url)
@@ -131,25 +156,20 @@ class CovFdw(ForeignDataWrapper):
                     cov_available = True
                 elif "Your query produced no matching results" in r.text:
                     #no data
-                    self.logger.info("not data for request...")
-                    return None
+                    self.logger.info("No data for request...")
                 else:    
                     #error
                     self.logger.info("Could not get data..."+r.text)
-                    return None
+                    #return nothing
         except Exception, e:
                 #fail            
-                self.logger.error("Failed to get data...:" + str(e))            
+                self.logger.error("Failed to get data...:" + str(e))         
 
-        
-        #loads a coverage
+        #loads a coverage, everything else returns empty array
         if cov_available:
             return ret_data 
         else:
-            return None       
-
-
-
+            return []       
 
 
     def request_resource_action(self, service_name, op, **kwargs):  

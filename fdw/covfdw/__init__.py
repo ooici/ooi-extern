@@ -73,9 +73,10 @@ class CovFdw(ForeignDataWrapper):
                     time_bounds = "&"+str(qual.field_name)+str(qual.operator)+str(qual.value)
                     time_available = True
 
-        #fix the arrows
-        time_bounds = time_bounds.replace(">", "%3E")
-        time_bounds = time_bounds.replace("<", "%3C")
+        if time_available:
+            #fix the arrows
+            time_bounds = time_bounds.replace(">", "%3E")
+            time_bounds = time_bounds.replace("<", "%3C")
 
 
         #TODO verify requested requirements
@@ -88,7 +89,6 @@ class CovFdw(ForeignDataWrapper):
             #if there is data
             for row in ret_data:
                 yield row   
-            #-------------------
         else:
             #####COMPLEX--------
             #get the req columns
@@ -107,16 +107,10 @@ class CovFdw(ForeignDataWrapper):
 
                 for i in range(0,len(param_list)):
                     #add data in for requested params
-                    param = param_list[i]                    
-                    self.logger.info("param:"+str(param))
-                    self.logger.info("val:"+str(row[i]))
+                    param = param_list[i]                                                        
                     new_row[param] = row[i]
-
-                self.logger.info("row:"+str(new_row))
+                
                 yield new_row  
-
-            
-            #-------------------     
 
     def getSimpleDataStruct(self,param_list,time_available,time_bounds):
         '''
